@@ -16,33 +16,26 @@ ttest-playwright/
 ├── AGENT_PROMPTS.md                     # Prompt templates for humans
 ├── analyze-project.bat / .ps1           # JSON structure generator
 ├── .agent-cache/                        # JSON cache (gitignored)
-│   └── project-structure.json
 │
 ├── Authen/                              # Shared auth infrastructure
-│   ├── Microsoft/                       # Azure AD SSO
-│   └── Form-Login/                      # Form-based auth
-│
-├── Test-Prod/                           # Public URL tests (flat: project/spec)
+├── Test-Prod/                           # Public URL tests
 │
 └── Test-Local/                          # Auth-required tests
-    └── <Project>/                       # e.g. WEF, Nebula-Spa
-        └── <AccessFlow>/                # e.g. Microsoft-Login, Admin-Login
-            ├── project.config.json      # { "authType": "microsoft|form|none" }
+    └── <Project>/
+        └── <AccessFlow>/
+            ├── project.config.json
             │
             ├── <Module>/                # e.g. dashboard, car-model
-            │   ├── _locators/           # Module-level, gitignored — field codegen
+            │   ├── _locators/           # Module-level, gitignored — per-TC snippets
             │   │   ├── .gitkeep
-            │   │   ├── search.ts
-            │   │   └── print.ts
+            │   │   └── <feature>.ts     # 1 snippet per TC, ordered by CSV
             │   │
             │   ├── _flows/              # Module-level, gitignored — full-flow codegen
             │   │   ├── .gitkeep
-            │   │   ├── search.ts
-            │   │   └── print.ts
+            │   │   └── <feature>.ts     # setup + test actions, marked
             │   │
-            │   ├── _scenarios/          # Module-level, COMMITTED — QA test scenarios (CSV)
-            │   │   ├── search.csv
-            │   │   └── print.csv
+            │   ├── _scenarios/          # Module-level, COMMITTED — QA scenarios
+            │   │   └── <feature>.csv    # 1 row per TC, order matches _locators/
             │   │
             │   └── <Feature>/           # 4-file feature pattern
             │       ├── <feature>.spec.ts
@@ -50,7 +43,7 @@ ttest-playwright/
             │       ├── <feature>.types.ts
             │       └── <feature>.data.ts
             │
-            └── _shared/                 # Shared utilities across features
+            └── _shared/
                 └── verify-helpers.ts
 ```
 
@@ -60,87 +53,70 @@ ttest-playwright/
 |---|---|
 | `none` | Public pages, no login |
 | `microsoft` | Azure AD SSO — persistent Chromium profile |
-| `form` | Email/password login — session storage (cookies or sessionStorage) |
+| `form` | Email/password login — session storage |
 
 ### Structure decision
 
 | Structure | Use when | Example |
 |---|---|---|
-| **Flat** (spec directly in module) | Simple CRUD, single feature, <10 test cases | `car-model/car-model-add.spec.ts` |
-| **Nested** (feature folder + 4 files) | Multiple features per module, OR 3+ actions, OR 10+ data-driven cases | `dashboard/print/print.spec.ts` + `.helper.ts` + `.types.ts` + `.data.ts` |
+| **Flat** | Simple CRUD, single feature, <10 test cases | `car-model/car-model-add.spec.ts` |
+| **Nested** | Multiple features per module, OR 3+ action types | `dashboard/print/print.spec.ts` + 3 files |
 
 ### Three module-level folders
 
-| Folder | Contents | Owner | Committed? | Purpose |
-|---|---|---|---|---|
-| `_locators/` | Field codegen (single-page interactions) | Dev | ❌ gitignored | Field inventory: what's on the page |
-| `_flows/` | Full-flow codegen (navigate → interact → submit) | Dev | ❌ gitignored | Sequence: how the feature is used end-to-end |
-| `_scenarios/` | QA test scenarios (CSV) | **QA** | ✅ committed | Intent: what to test + how (step-by-step) |
-
-Only `.gitkeep` is committed inside `_locators/` and `_flows/`. Everything in `_scenarios/` is committed.
+| Folder | Owner | Committed? | Purpose |
+|---|---|---|---|
+| `_locators/` | Dev | ❌ | Per-TC action snippets — 1 per row |
+| `_flows/` | Dev | ❌ | Full-flow codegen — setup + test-action patterns |
+| `_scenarios/` | **QA** | ✅ | Test scenarios (CSV) — 1 row per TC |
 
 ### What counts as a feature?
 
-A feature = **one user-facing action** with its own success criteria.
-
-Multiple actions on the same page can be different features:
-- `dashboard/search` → filter records, verify results
-- `dashboard/print` → print work order, verify download/dialog
-- `dashboard/export` → export data, verify file
-
-Rule: if two actions have **different success criteria**, they are different features — even on the same page.
+One user-facing action with its own success criteria. Multiple actions on the same page = different features:
+- `dashboard/search` — filter records, verify results
+- `dashboard/print` — print work order, verify dialog/download
+- `dashboard/export` — export data, verify file
 
 ---
 
 ## Section 2: Universal Principles
 
-### Locator rules
+### Locator rules (for HUMAN-written codegen in `_flows/` and `_locators/`)
 
-- **Prefer role-based** selectors: `page.getByRole('button', { name: 'ค้นหา' })`
-- **Never use** auto-generated IDs (`#radix-*`, `#mat-*`, UUIDs) — they change per render
-- **Avoid `exact: true`** with Thai labels containing `/`, spaces, or special chars — use partial match or RegExp
-- **Preserve Thai UI text** exactly as it appears in the app (`'ค้นหา'`, `'บันทึก'`, `'ไม่พบข้อมูล'`)
+- Prefer role-based selectors: `page.getByRole('button', { name: 'ค้นหา' })`
+- Never use auto-generated IDs (`#radix-*`, `#mat-*`, UUIDs)
+- Avoid `exact: true` with Thai labels containing `/`, spaces, or special chars
+- Preserve Thai UI text exactly as it appears in the app
+
+**AI does not generate selectors** in this framework. Selectors come from dev's codegen in `_flows/` and `_locators/`. AI only transcribes.
 
 ### Verification
 
 - Import shared helpers from `Test-Local/<project>/_shared/verify-helpers.ts`
 - Use `verifySearchResult`, `verifyEmptyState`, `verifyRecordCount`, `verifyFieldError`, `verifySuccessToast`, `verifyNavigatedTo`
-- Never use bare `expect(...).toBeVisible()` for common patterns — use typed helper
+- Feature-level `defaultVerify` in spec.ts runs at end of every test
 
 ### Security (never commit)
 
-- `session-storage.json`, `state.json`, `profile/`
-- `.env` files
-- `_locators/**` and `_flows/**` — contents only (`.gitkeep` is committed)
+- `session-storage.json`, `state.json`, `profile/`, `.env`
+- `_locators/**` and `_flows/**` contents (`.gitkeep` is committed)
 - `.agent-cache/*.json`
 
-Contents of `_scenarios/**` are **always committed** — they are QA-owned truth.
+`_scenarios/**` contents are always committed — QA-owned truth.
 
 ---
 
 ## Section 3: Discovery Mechanism
 
-AI agents can discover project structure via two paths — user chooses per session.
+### Option A: Read JSON cache
 
-### Option A: Read JSON cache (token-efficient)
-
-**File:** `.agent-cache/project-structure.json`
-
-**Generate:** Run `analyze-project.bat` (or `.ps1`) — scans `Test-Local/` and writes JSON
-
-**Contents:** All projects → access flows → modules → features → files, patterns, test case count
-
-**When to use:**
-- Chat AI (Claude, ChatGPT web) — paste JSON as context
-- Any AI when workspace scanning is expensive
-
-**When to regenerate:** After adding/renaming feature, module, or access flow
+**File:** `.agent-cache/project-structure.json`  
+**Generate:** Run `analyze-project.bat` (or `.ps1`)  
+**When:** Chat AI or when workspace scanning is expensive
 
 ### Option B: Scan workspace directly
 
-**When to use:** Copilot/Cursor with native workspace access
-
-**How:** Follow folder convention in Section 1 to locate files
+For Copilot/Cursor with native workspace access.
 
 ---
 
@@ -148,140 +124,164 @@ AI agents can discover project structure via two paths — user chooses per sess
 
 Three cases cover all changes to a feature:
 
-### Case 1 — Add test case(s) under existing pattern
+### Case 1 — Update test cases
 
-**Signal:** Feature exists, all steps in new scenarios use verbs the helper already handles
+**Signal:** Feature exists. Dev updated `_locators/` snippets or QA appended CSV rows. Need to regenerate test data.
 
-**Action:** Append rows to `_scenarios/<feature>.csv` → run Case 1 → AI appends to `data.ts`
+**Action:** AI re-reads `_locators/` + CSV → regenerates helper's locator array + `data.ts`. Does NOT touch spec.ts, types.ts.
 
-**Files touched:** 1 (`data.ts`) + `_scenarios/<feature>.csv` (dev/QA appends)
+**Files touched:** 2 (`helper.ts` locator array section + `data.ts`)
 
 **Prompt template:** See `AGENT_PROMPTS.md` → Case 1
 
-### Case 2 — Extend pattern (new step verb)
+### Case 2 — Extend pattern (new action type)
 
-**Signal:** New scenario has a step verb (e.g., `Upload`, `Drag`) not covered by helper's switch
+**Signal:** Dev added a new pattern in `_flows/` that helper's switch doesn't handle (e.g., `dragAndDrop`, `uploadFile`).
 
-**Action:**
-1. Add verb to `helper.ts` switch
-2. Extend `types.ts` `Step` union
-3. Update AGENTS.md Section 9 verb list
+**Action:** Add case to helper switch + variant to types.ts union + update this file's Section 9.
 
-**Files touched:** 2-3 (`types.ts` + `helper.ts` + optionally AGENTS.md)
+**Files touched:** 2-3 (`helper.ts` + `types.ts` + optionally AGENTS.md)
 
 **Prompt template:** See `AGENT_PROMPTS.md` → Case 2
 
-### Case 3 — New feature (bootstrap 4 files + seed TCs)
+### Case 3 — New feature (bootstrap all 4 files)
 
-**Signal:** Feature doesn't exist
+**Signal:** Feature doesn't exist yet.
 
-**Action:**
-1. Codegen field inventory → `<module>/_locators/<feature>.ts`
-2. Codegen full flow → `<module>/_flows/<feature>.ts`
-3. QA prepares `<module>/_scenarios/<feature>.csv` with all initial scenarios
-4. Choose pattern archetype (Section 8)
-5. Run Case 3 → AI generates 4 files with **populated** data.ts
+**Action:** Two phases in one prompt:
+- **Phase 1** — Generate `spec.ts`, `helper.ts`, `types.ts` from `_flows/`
+- **Phase 2** — Populate helper's locator array + `data.ts` from `_locators/` + CSV
 
-**Files touched:** 4 new files + 3 codegen/scenario files in module
+**Files touched:** 4 new files, requires 3 precondition files (`_flows/`, `_locators/`, `_scenarios/`)
 
 **Prompt template:** See `AGENT_PROMPTS.md` → Case 3
 
 ### Decision tree
 
 ```
-New scenario request
+Change needed
     │
     ├─► Feature exists?
     │     │
-    │     ├─► No  ─► Case 3 (bootstrap + seed)
+    │     ├─► No  ─► Case 3 (bootstrap)
     │     │
-    │     └─► Yes ─► Do all step verbs exist in helper?
+    │     └─► Yes ─► New action type in _flows/?
     │               │
-    │               ├─► Yes ─► Case 1 (append to data.ts)
-    │               └─► No  ─► Case 2 (extend helper) → then Case 1
+    │               ├─► Yes ─► Case 2 (extend helper)
+    │               └─► No  ─► Case 1 (update TCs)
 ```
 
 ---
 
 ## Section 5: Codegen + Scenarios Workflow
 
-Three artifacts feed into feature generation. Each has different lifecycle and ownership.
+### `_flows/<feature>.ts` — full flow (dev-owned, gitignored)
 
-### Codegen (`_flows/` + `_locators/`)
+**Purpose:** Full sequence from login through all test-action patterns, used to generate spec.ts + helper.ts + types.ts.
 
-**Rule:** AI does not generate raw codegen. Both come from manual Playwright codegen.
+**Structure — 2 sections separated by marker:**
 
-**Location:**
-- `<module>/_locators/<feature>.ts` — one file per feature, field inventory
-- `<module>/_flows/<feature>.ts` — one file per feature, full flow (login → interact → submit)
+```typescript
+// === SETUP ===
+// everything that happens BEFORE test actions:
+// login, navigation, clear filters, click search to populate table, etc.
 
-**Codegen scope:** ONE feature per file. If codegen captures multiple distinct actions with different success criteria, split into multiple `_flows/` files → these become multiple features (Section 1).
+await page.goto('...');
+await page.getByText('TMSTH Staff...').click();
+// ...
+await page.getByRole('button', { name: 'ล้างค่า' }).click();
+await page.getByRole('button', { name: 'ค้นหา' }).click();
 
-**Regenerate when:** UI changes, new fields added, flow steps change
+// === TEST ACTIONS ===
+// every pattern used by any TC:
+// simple click, download event, click-with-close, etc.
 
-### Scenarios (`_scenarios/*.csv`)
+// pattern: download
+const downloadPromise = page.waitForEvent('download');
+await page.getByRole('button', { name: 'Export Excel' }).click();
+const download = await downloadPromise;
 
-**Rule:** QA writes CSV. Dev may edit but QA owns the source of truth.
-
-**Location:** `<module>/_scenarios/<feature>.csv` — one file per feature
-
-**Format:** 5 columns
-```csv
-TC-ID,Module,Feature,Scenario,Steps
-TC012,Dashboard,Print,Print Job Sheet,"1. Click Print button on a record
-2. Select Print option"
-TC013,Dashboard,Print,Export Job Sheet to PDF,"1. Click Print button on a record
-2. Select PDF option"
+// pattern: click-with-close
+await page.getByRole('button', { name: 'ปริ้นท์ พ.ร.บ' }).first().click();
+await page.getByRole('button', { name: 'Close' }).click();
 ```
 
-**Steps column:**
-- Multi-line inside quotes
-- Numbered prefixes (`1.`, `2.`) for QA readability — AI strips when parsing
-- Free-form English, but MUST start with a verb from Section 9 vocabulary
+**Rules:**
+- MUST have `// === SETUP ===` and `// === TEST ACTIONS ===` markers
+- Everything above SETUP marker (or before it) → goes into `enter<Feature>Page` in spec.ts
+- Everything below TEST ACTIONS marker → analyzed for action patterns → becomes helper switch cases
+- Dev responsibility: `_flows/` must be **clean and comprehensive** — every pattern any TC uses must appear here
 
-**Regenerate CSV when:** QA adds new scenarios, priorities change. Never overwritten by AI.
+### `_locators/<feature>.ts` — per-TC snippets (dev-owned, gitignored)
+
+**Purpose:** One snippet per TC, ordered to match CSV rows.
+
+**Structure — 1 comment marker + 1 snippet per TC:**
+
+```typescript
+// TC001 - Export Excel
+await page.getByRole('button', { name: 'Export Excel' }).click();
+
+// TC002 - Print Compulsory
+await page.getByRole('button', { name: 'ปริ้นท์ พ.ร.บ' }).first().click();
+
+// TC003 - Print Job Sheet
+await page.getByRole('button', { name: 'ใบแจ้งงาน' }).first().click();
+```
+
+**Rules:**
+- 1 snippet per TC, separated by `// TC<ID> - <name>` comments
+- Snippet = the ATOMIC interaction only (a single click / fill / select) — NOT the full pattern
+  - Pattern wrappers (download event, close dialog) come from `_flows/` and live in helper
+- Order MUST match CSV row order
+- Snippet count MUST match CSV row count
+- TC-ID comments are audit trail for humans (AI parses them as a safety check)
+
+**Preparation shortcut:** Dev copies test-action lines from `_flows/`, strips pattern wrappers, adds TC-ID comments. Reuse 1 codegen session.
+
+### `_scenarios/<feature>.csv` — test scenarios (QA-owned, committed)
+
+**Format — 5 columns:**
+
+```csv
+TC-ID,Module,Feature,Scenario,Action
+TC001,Dashboard,Print,Export Excel,download
+TC002,Dashboard,Print,Print Compulsory,clickWithClose
+TC003,Dashboard,Print,Print Job Sheet,clickWithClose
+```
+
+**Columns:**
+- `TC-ID` — test case identifier
+- `Module` / `Feature` — context (redundant with folder path but useful for QA)
+- `Scenario` — human-readable name
+- `Action` — single action type name matching a case in helper's switch (see Section 9)
+
+**Rules:**
+- 1 row per TC — no multi-line scenarios
+- Row order MUST match `_locators/` snippet order
+- Row count MUST match `_locators/` snippet count
+- `Action` value MUST be a case name in helper's switch (Section 9)
 
 ### Workflow
 
-1. Dev runs codegen twice — one session for `_locators/`, one for `_flows/`
-2. QA writes CSV in `_scenarios/`
-3. User invokes Case 3 (or Case 1/2 as appropriate)
-4. AI reads:
-   - AGENTS.md — pattern rules (Sections 8, 9)
-   - `<module>/_flows/<feature>.ts` — sequence
-   - `<module>/_locators/<feature>.ts` — fields
-   - `<module>/_scenarios/<feature>.csv` — scenarios
-5. AI generates/updates the 4 pattern files
-6. Human reviews + applies
+1. Dev codegen `_flows/<feature>.ts` — add SETUP / TEST ACTIONS markers
+2. Dev prepare `_locators/<feature>.ts` — copy atomic interactions with TC-ID markers
+3. QA prepare `_scenarios/<feature>.csv` — matching row count + order
+4. Run Case 3 → AI generates 4 files
 
 ---
 
 ## Section 6: Adding a New Feature Workflow
 
-1. **Codegen** — two sessions
-   - Session A: click every field/button once → save `_locators/<feature>.ts`
-   - Session B: complete one end-to-end task → save `_flows/<feature>.ts`
-
-2. **Prepare CSV** — QA writes `_scenarios/<feature>.csv` with initial scenarios
-
-3. **Choose pattern archetype** (Section 8)
-
-4. **Choose structure** (flat vs nested — Section 1)
-
-5. **Run Case 3 prompt** (see AGENT_PROMPTS.md)
-
-6. **AI generates:**
-   - 4-file skeleton in `<module>/<feature>/`
-   - `data.ts` **populated** from CSV rows
-
-7. **Human reviews:**
-   - Verify spec.ts flow matches `_flows/`
-   - Verify helper.ts step handlers work against the actual page
-   - Verify data.ts TCs match CSV
-
-8. **Regenerate JSON cache** — `analyze-project.bat`
-
-9. **Add more TCs later** via Case 1 (append CSV → Case 1 prompt)
+1. **Codegen** `_flows/<feature>.ts` with SETUP / TEST ACTIONS markers
+2. **Prepare** `_locators/<feature>.ts` (1 snippet per TC, matches CSV order)
+3. **QA writes** `_scenarios/<feature>.csv`
+4. **Choose structure** (flat vs nested)
+5. **Run Case 3 prompt**
+6. AI generates 4 files
+7. Review + run tests
+8. Regenerate JSON cache — `analyze-project.bat`
+9. Add more TCs later via Case 1 (append CSV rows + `_locators/` snippets)
 
 ---
 
@@ -289,176 +289,263 @@ TC013,Dashboard,Print,Export Job Sheet to PDF,"1. Click Print button on a record
 
 ### When to add new verify helper
 
-- Pattern used across 3+ specs → extract to `_shared/verify-helpers.ts` (rule of three)
+- Pattern used across 3+ specs → extract to `_shared/verify-helpers.ts`
 - Pattern used in 1-2 specs → inline in spec
 
 ### When to create new AGENTS.md (nested)
 
-- **Never** — this framework is universal by design
+- **Never** — framework is universal by design
 
 ### When to extract to `_shared/`
 
-- Helper function used across 3+ specs → extract
-- Login/navigation flow used across 3+ specs → extract to `<project>/_shared/`
+- Function used across 3+ specs → extract
+- Login/navigation used across 3+ specs → extract to `<project>/_shared/`
 
 ### When to split a feature into two
 
-- Codegen has two paths with different success criteria → split
-- `_scenarios/` CSV has scenarios that can't share the same verify → split
+- `_flows/` has two paths with different success criteria → split
+- CSV rows have scenarios that can't share the same `defaultVerify` → split
 
 ---
 
 ## Section 8: 4-File Pattern (Reference)
 
-Every nested feature has 4 files. The **structure** below is fixed. The **content** is derived from that feature's `_flows/`, `_locators/`, and `_scenarios/`.
+### Design principle
 
-### Pattern archetypes
+**Phase 1 (spec + helper + types) is generated from `_flows/`.**  
+**Phase 2 (data.ts + helper locator array) is generated from `_locators/` + `_scenarios/`.**
 
-| Archetype | Signal | Data shape | Example feature |
-|---|---|---|---|
-| **A: Search Pattern** (Fill-and-Submit) | User fills fields, submits, verifies result | `controlType`-based union (legacy) OR step-based union | `dashboard/search` (legacy — controlType-based) |
-| **B: Action Pattern** (Click-and-Verify) | User clicks action buttons, verifies dialog/download/navigation | Step-based union | `dashboard/print` |
-
-**New features MUST use step-based union.** The `controlType`-based shape (in existing `search` feature) is grandfathered and not required to migrate.
+AI does not match scenario names against codegen labels — order is the single source of truth. This eliminates hallucination surface.
 
 ### `<feature>.types.ts` — data shape
 
-**Step-based union (canonical for new features):**
+**Structure:**
 
 ```typescript
-export type Step =
-  | { action: 'click'; target: string }
-  | { action: 'fill'; target: string; value: string }
-  | { action: 'select'; target: string; option: string }
-  | { action: 'verify'; assertion: string };
+// Action type: one string literal per case in helper's switch
+export type <Feature>Action = 'click' | 'download' | 'clickWithClose' | ...;
 
+// Test case: references locator by index, action by name
 export interface <Feature>TestCase {
   testCaseId: string;
   scenario: string;
-  steps: Step[];
+  action: <Feature>Action;
+  locatorIndex: number;
 }
 ```
 
-**controlType-based union (legacy — do not use for new features):**
+Action names come from patterns AI identifies in `_flows/` TEST ACTIONS section (see Section 9).
 
-```typescript
-// See dashboard/search/search.types.ts for reference
-export type <Feature>Control =
-  | { controlType: 'textbox'; controlIndex: number; value: string }
-  | { controlType: 'namedTextbox'; accessibleName: string; value: string }
-  | ...;
-```
-
-### `<feature>.helper.ts` — step application
+### `<feature>.helper.ts` — action application + locator array
 
 **Structure:**
-- **Exported function** `apply<Feature>Steps(page, testData)` — entry point called by spec.ts. Loops over `testData.steps` and delegates to `applyStep`.
-- **Internal function** `applyStep(page, step)` — switch on `step.action`. Each case:
-  1. Locate the target (from `_locators/` reference)
-  2. `expect(...).toBeVisible({ timeout })`
-  3. Perform the action
-  4. Assert state (when applicable)
-- **Verify case** — hybrid parser. `step.assertion` is free-form text; helper recognizes patterns (Section 9) and executes matching assertion.
-- **Guards** (mandatory):
-  - Empty-value guard for `fill` and `select` actions
-  - Not-found hint for `click` targets (better error than raw timeout)
-  - `never`-type default case in the switch
 
-Feature-specific setup (login, navigation, wait for loading) lives in **spec.ts**, not here.
+```typescript
+import { Page } from '@playwright/test';
+import type { <Feature>Action, <Feature>TestCase } from './<feature>.types';
+
+// Phase 2: populated from _locators/<feature>.ts
+const locators: Array<(page: Page) => Promise<void>> = [
+  async (page) => {
+    // TC001 snippet
+  },
+  async (page) => {
+    // TC002 snippet
+  },
+  // ...
+];
+
+// Phase 1: patterns from _flows/ TEST ACTIONS
+async function applyAction(
+  page: Page,
+  action: <Feature>Action,
+  locatorIndex: number
+): Promise<void> {
+  const locator = locators[locatorIndex];
+  if (!locator) {
+    throw new Error(`No locator at index ${locatorIndex}`);
+  }
+
+  switch (action) {
+    case 'click': {
+      await locator(page);
+      break;
+    }
+    case 'download': {
+      const downloadPromise = page.waitForEvent('download');
+      await locator(page);
+      await downloadPromise;
+      break;
+    }
+    case 'clickWithClose': {
+      await locator(page);
+      await page.getByRole('button', { name: 'Close' }).click();
+      break;
+    }
+    default: {
+      const _: never = action;
+      throw new Error(`Unknown action: ${_}`);
+    }
+  }
+}
+
+export async function apply<Feature>Action(
+  page: Page,
+  testData: <Feature>TestCase
+): Promise<void> {
+  await applyAction(page, testData.action, testData.locatorIndex);
+}
+```
+
+**Rules:**
+- `locators` array populated Phase 2 (order matches CSV)
+- `applyAction` switch cases come from Phase 1 (`_flows/` TEST ACTIONS)
+- Every case must:
+  1. Fetch locator by index
+  2. Execute pattern (wrap locator call with any needed setup/teardown)
+- `never`-type default case mandatory
 
 ### `<feature>.spec.ts` — orchestration
 
 **Structure:**
-- **Constants** (URL, timeouts specific to feature)
-- **Setup helpers derived from `_flows/`**:
-  - `waitForLoading(page)` if the feature has loading states
-  - `enter<Feature>Page(page)` — navigate + login + reach the feature's page
-- **`defaultVerify(page, testData)`** — feature-level default verify. Runs at the end of every test unless the CSV Steps explicitly include a `Verify` step.
-- **`test.describe('<Feature Name>', ...)`** wrapping all tests
-- **`test.beforeEach`** — calls `enter<Feature>Page`
-- **`for (const testData of <feature>TestCases)`** loop — one test per data row
-- Each test:
-  ```typescript
-  await apply<Feature>Steps(page, testData);
-  await defaultVerify(page, testData);
-  ```
+
+```typescript
+import { test, Page } from '@playwright/test';
+import { <feature>TestCases } from './<feature>.data';
+import { apply<Feature>Action } from './<feature>.helper';
+
+const APPLICATION_URL = '...';
+
+async function waitForLoading(page: Page): Promise<void> {
+  // if flows uses it
+}
+
+// Setup helper derived from _flows/ SETUP section (top-to-bottom transcription)
+async function enter<Feature>Page(page: Page): Promise<void> {
+  await page.goto(APPLICATION_URL);
+  // ... every step from _flows/ SETUP section
+}
+
+// Feature-level default verify (from user in Case 3 prompt)
+async function defaultVerify(page: Page): Promise<void> {
+  // e.g. no error dialog + URL matches
+}
+
+test.describe('<Feature Name>', () => {
+  test.beforeEach(async ({ page }) => {
+    await enter<Feature>Page(page);
+  });
+
+  for (const testData of <feature>TestCases) {
+    test(`${testData.testCaseId} - ${testData.scenario}`, async ({ page }) => {
+      await apply<Feature>Action(page, testData);
+      await defaultVerify(page);
+    });
+  }
+});
+```
+
+**Rules:**
+- `enter<Feature>Page` = LITERAL transcription of `_flows/` SETUP section (with `waitForLoading` inserted where flow shows loading states)
+- `defaultVerify` = feature-level check, user specifies content in Case 3 prompt
+- Test loop is universal boilerplate
 
 ### `<feature>.data.ts` — test cases
 
 **Structure:**
-- Import types
-- Export const array `<feature>TestCases: <Feature>TestCase[]` with type annotation
 
-**For Case 3 bootstrap:** array is **populated from CSV** — each CSV row → one TestCase.
+```typescript
+import type { <Feature>TestCase } from './<feature>.types';
 
-**For Case 1 expansion:** array grows as CSV grows.
+export const <feature>TestCases: <Feature>TestCase[] = [
+  {
+    testCaseId: 'TC001',
+    scenario: 'Export Excel',
+    action: 'download',
+    locatorIndex: 0,
+  },
+  {
+    testCaseId: 'TC002',
+    scenario: 'Print Compulsory',
+    action: 'clickWithClose',
+    locatorIndex: 1,
+  },
+  // ...
+];
+```
+
+**Rules:**
+- Populated from CSV rows
+- `locatorIndex` = CSV row position (0-based)
+- Length = CSV row count = `_locators/` snippet count
 
 ### How the 4 files connect
 
 ```
-_scenarios/<feature>.csv
-        │
-        ▼ (Case 3 / Case 1 reads)
-data.ts   ──imports types──►   types.ts
-   │
-   └──consumed by──►   spec.ts   ──imports──►   helper.ts   ──imports types──►   types.ts
-                          │
-                          └──imports──►   _shared/verify-helpers.ts
+_flows/<feature>.ts (SETUP)       ──►   spec.ts (enter<Feature>Page)
+_flows/<feature>.ts (TEST ACTIONS)──►   helper.ts (switch cases) + types.ts (action union)
+_locators/<feature>.ts             ──►   helper.ts (locators array)
+_scenarios/<feature>.csv           ──►   data.ts (TC array)
 ```
 
-`_flows/<feature>.ts` and `_locators/<feature>.ts` are **NOT imported** at runtime — they are references AI reads at generation time. `_scenarios/<feature>.csv` is imported ONLY conceptually (AI reads it to populate `data.ts`).
+`_flows/`, `_locators/`, `_scenarios/` are NOT imported at runtime — AI reads them at generation time.
 
 ---
 
-## Section 9: Step Vocabulary
+## Section 9: Action Vocabulary
 
-QA writes CSV steps in free-form English but MUST start each step with a verb from the frozen list below. Helper parses verbs, everything after the verb is target/value.
+Actions are patterns AI identifies in `_flows/` TEST ACTIONS section. Each pattern → one case in helper switch → one string literal in types union.
 
-### Action verbs (helper handles these)
+### Canonical patterns
 
-| Verb | Syntax | Example | Helper action |
-|---|---|---|---|
-| **Click** | `Click <target>` | `Click Print button on a record` | `page.getByRole('button', { name }).click()` |
-| **Fill** | `Fill <target> with <value>` | `Fill Receipt textbox with HQ0000020` | `page.getByRole('textbox', { name }).fill(value)` |
-| **Select** | `Select <option> from <target>` OR `Select <option> option` | `Select PDF option` | Open dropdown → click matching option |
-| **Verify** | `Verify <assertion>` | `Verify dialog opens` | Hybrid parse — see below |
-
-### Verify sub-verbs (hybrid parser inside `Verify`)
-
-| Sub-verb | Example | Assertion |
+| Pattern | `_flows/` signature | Helper case |
 |---|---|---|
-| `visible` / `opens` / `shows` | `Verify dialog opens` | `expect(el).toBeVisible()` |
-| `hidden` / `closes` | `Verify loading closes` | `expect(el).toBeHidden()` |
-| `contains` | `Verify page contains HQ0000020` | `expect(page.getByText(text)).toBeVisible()` |
-| `downloaded` | `Verify PDF downloaded` | Wait for `download` event |
-| `navigated` / `URL matches` | `Verify URL matches /dashboard/` | `expect(page).toHaveURL(pattern)` |
+| **click** | Single `.click()` line | Call locator(page) |
+| **download** | `waitForEvent('download')` + click + await | Wrap locator with download promise |
+| **clickWithClose** | Click + immediate close button click | Locator then click Close button |
+| **fillAndSubmit** | Fill + click submit | Locator + submit button |
+| **selectFromDropdown** | Open dropdown + click option | Locator opens dropdown, args select option |
+| **dragAndDrop** | Two locators + drag | Not yet supported — Case 2 to add |
+
+### Naming rules
+
+- Action name = camelCase, describes what the pattern DOES
+- No target names in the action (targets come from locator index)
+- Frozen list — new pattern requires Case 2
 
 ### Extending the vocabulary
 
-If QA writes a step verb not in the list:
-1. Case 1 STOPS and reports which verb is unknown
-2. User runs Case 2 to add the verb to helper + types + this section
-3. Case 1 re-runs successfully
+If `_flows/` has a pattern not in the list:
+1. Case 3 STOPS and reports "New pattern in _flows/: <description>"
+2. User runs Case 2 to add pattern → helper switch case + types union + this section
+3. Case 3 re-runs
 
-**Never let AI infer new verbs.** New verbs = Case 2 explicitly.
+**AI never invents pattern names.** New pattern = Case 2 explicitly.
 
 ### Feature-level default verify
 
-Each feature has a `defaultVerify` function in spec.ts that runs at the end of every test. It answers "did this feature complete without breaking?" — a safety net.
+Each feature has `defaultVerify(page)` in spec.ts, running at end of every test. Content is provided by user in Case 3 prompt.
 
 Examples:
-- **Print:** `defaultVerify` = no error dialog + still on dashboard
-- **Search:** `defaultVerify` = no error + result count > 0 (or matches expected)
-- **Export:** `defaultVerify` = download completed (or file exists in downloads folder)
-
-If a CSV Steps column includes explicit `Verify` steps, those run AS PART OF the steps loop. `defaultVerify` still runs at the end regardless.
+- **Print:** no error dialog + still on `/dashboard`
+- **Search:** no error + result count > 0
+- **Export:** download completed
 
 ---
 
 ## Contribution notes
 
-- Update this file when new pattern archetype emerges or new verb is added
-- Keep sections concise — AI ignores overly long docs
-- Prefer **pointing to reference implementations** over inlining long examples
-- Preserve Thai UI labels exactly (don't romanize or translate)
-- After adding/removing feature, run `analyze-project.bat` to refresh JSON cache
+- Update this file when new pattern emerges (Case 2 flow)
+- Keep sections concise
+- Preserve Thai UI labels exactly
+- After adding/removing feature, run `analyze-project.bat`
+
+---
+
+## Changelog
+
+- 2026-09-20 (v6) — Snippet-based model. `_locators/` = 1 snippet per TC (order-matched to CSV). Phase 1 (spec/helper/types) from `_flows/`. Phase 2 (data + locator array) from `_locators/` + CSV. Zero hallucination surface (AI never generates selectors). Section 9 rewritten: Action patterns replace verb-based steps.
+- 2026-09-20 (v5.1) — Added "test-ready state" definition, no-translate + no-OR-regex rules.
+- 2026-09-20 (v5) — Pattern archetypes, step-based union, `_scenarios/` CSV convention.
+- 2026-09-19 (v4) — `_flows/`, Section 8 (4-file pattern abstract).
+- 2026-09-XX (v3) — Universal framework baseline.

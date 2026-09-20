@@ -6,44 +6,76 @@
 - Module: dashboard
 - Feature: print
 
+### Case 3 — New feature (bootstrap)
+
+**Location**
+- Project: <project>
+- AccessFlow: <access-flow>
+- Module: <module>
+- Feature: <feature>
+
 **Structure**
-- flat | nested   (see AGENTS.md Section 1 criteria; if unsure, ask AI to recommend)
+- flat | nested   (see AGENTS.md Section 1)
 
-**Precondition files** (dev prepared via codegen)
-- `dashboard/_flows/print.ts` — full flow
-- `dashboard/_locators/print.ts` — field inventory
+**Feature-level default verify** (runs at end of every test)
+- <describe what "success" looks like>
+- e.g. "no error dialog visible + URL still matches /dashboard/"
 
-**Seed example** (helper's first case)
-- Field label (as shown in UI): <thai label>
-- Control type: textbox | dateTextbox | dropdown | namedTextbox | namedDropdown | <new>
-- Why chosen: <e.g., "primary search field", "simplest to verify">
+**Precondition files** (all must exist)
+- `<module>/_flows/<feature>.ts` — with SETUP / TEST ACTIONS markers
+- `<module>/_locators/<feature>.ts` — with TC-ID markers
+- `<module>/_scenarios/<feature>.csv` — rows match _locators/ count + order
 
 **Rules**
-1. Read `AGENTS.md` Section 8 — 4-file pattern (this is the STRUCTURE reference)
-2. Read `dashboard/_flows/print.ts` — extract full flow sequence
-3. Read `dashboard/_locators/print.ts` — extract field inventory
-4. (Optional) Peek at any existing feature under `Test-Local/` for STRUCTURE only
-   — do NOT copy business logic, project-specific flows, or verification steps
-   — structure means: file layout, function signatures, import order, switch shape
-5. Generate 4 files in `dashboard/print/`:
-   - **`print.types.ts`** — union with the seed control type + TestCase interface
-   - **`print.helper.ts`** — apply function + switch with 1 seed case + guards + never default
-   - **`print.spec.ts`** — setup helpers derived from `_flows/` + describe + beforeEach + for-loop
-   - **`print.data.ts`** — EMPTY array with type annotation (no test cases)
-6. Setup helpers in spec.ts MUST derive from `_flows/print.ts` — do not invent flow steps
-7. Verification MUST use `_shared/verify-helpers.ts` when applicable (see AGENTS.md Section 2)
-8. Guards required in helper.ts:
-   - Empty-value guard for dropdown-type controls
-   - Not-found hint for named-lookup controls (better error than raw timeout)
-   - `never`-type default case
-9. Preserve Thai UI text character-for-character
-10. **Do NOT seed any test case in data.ts** — array must be empty. Test cases are added via Case 1 or Case 2.
+
+**Precondition verification:**
+1. Verify all 3 precondition files exist. If any missing → **STOP** and report.
+2. Verify `_flows/` has `// === SETUP ===` and `// === TEST ACTIONS ===` markers. If missing → **STOP**.
+3. Verify `_locators/` has TC-ID comments. If missing → **STOP**.
+4. Verify `_locators/` snippet count == CSV row count. If mismatch → **STOP** and report which side has extras.
+5. Verify feature folder does NOT already exist. If exists → **STOP** (use Case 1 instead).
+
+**Phase 1 — Generate spec.ts + helper.ts (structure) + types.ts:**
+6. Read `AGENTS.md` Section 8 and Section 9
+7. Read `<module>/_flows/<feature>.ts`:
+   - SETUP section → transcribe into `enter<Feature>Page` helper in spec.ts
+   - TEST ACTIONS section → identify each pattern (Section 9 canonical list)
+8. For each identified pattern:
+   - If in Section 9 → note the name (e.g., `click`, `download`, `clickWithClose`)
+   - If NOT in Section 9 → **STOP** and report "Case 2 required — new pattern: <description>"
+9. Generate `<feature>.types.ts`:
+   - Action union with one string literal per identified pattern
+   - TestCase interface with `testCaseId`, `scenario`, `action`, `locatorIndex`
+10. Generate `<feature>.helper.ts` structure:
+    - Empty `locators` array (populated in Phase 2)
+    - `applyAction` switch — one case per identified pattern (from TEST ACTIONS)
+    - Each case: fetch locator by index, execute pattern (transcribe from _flows/), never default
+    - Export `apply<Feature>Action` public function
+11. Generate `<feature>.spec.ts`:
+    - Transcribe `_flows/` SETUP into `enter<Feature>Page` (literal transcription, insert `waitForLoading` where flow shows loading states)
+    - `defaultVerify` per user's description
+    - `test.describe` + `beforeEach` + `for` loop over test cases
+
+**Phase 2 — Populate locators array + generate data.ts:**
+12. Read `<module>/_locators/<feature>.ts` — collect snippets in file order with TC-IDs
+13. Read `<module>/_scenarios/<feature>.csv` — collect rows in file order
+14. Verify each CSV `Action` value has a matching case in helper's switch. If any missing → **STOP** and report.
+15. Populate `<feature>.helper.ts` `locators` array:
+    - One entry per snippet, in file order
+    - Wrap each snippet as `async (page) => { <snippet code> }`
+    - Preserve TC-ID comment above each entry
+    - Transcribe snippet character-for-character (no rewrites)
+16. Generate `<feature>.data.ts`:
+    - One TestCase object per CSV row
+    - `locatorIndex` = 0-based row position (matches snippet position)
+    - `action` from CSV Action column
+    - `testCaseId` + `scenario` from CSV
 
 **Output**
-- 4 new files in `dashboard/print/`
-- Brief note per file:
-  - `types.ts`: "1 control type in union — <name>"
-  - `helper.ts`: "1 case implemented — <name>, guards added"
-  - `spec.ts`: "flow derived from _flows/ — <N> setup helpers, <M> test steps"
-  - `data.ts`: "empty skeleton, ready for Case 1/2"
-- Next-step reminder: "Use Case 2 to seed first test case, or Case 1 if scenario matches the seed example"
+- 4 new files in `<module>/<feature>/`
+- Report per file:
+  - `types.ts`: "Action union: <list>"
+  - `helper.ts`: "<N> switch cases + <M> locators"
+  - `spec.ts`: "SETUP transcribed: <N> steps"
+  - `data.ts`: "<M> TCs generated"
+- Sanity check: "All CSV Actions match switch cases: yes"

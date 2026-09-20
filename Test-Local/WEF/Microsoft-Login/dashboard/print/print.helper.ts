@@ -1,104 +1,96 @@
-import {
-  expect,
-  Locator,
-  Page,
-} from '@playwright/test';
+import { expect, Page } from '@playwright/test';
 
 import type {
-  DashboardPrintControl,
+  DashboardPrintAction,
+  DashboardPrintTestCase,
 } from './print.types';
 
-function getIndexedControl(
-  controls: Locator,
-  controlIndex: number
-): Locator {
-  if (
-    !Number.isInteger(controlIndex) ||
-    controlIndex < 0
-  ) {
-    throw new Error(
-      `Invalid control index: ${controlIndex}`
-    );
-  }
+const locators: Array<(page: Page) => Promise<void>> = [
+  async (page: Page): Promise<void> => {
+    await page
+      .getByRole('button', {
+        name: 'ปริ้นท์ พ.ร.บ',
+      })
+      .first()
+      .click();
+  },
+  async (page: Page): Promise<void> => {
+    const downloadPromise = page.waitForEvent('download');
+    await page
+      .getByRole('button', {
+        name: ' Export Excel',
+      })
+      .click();
+    await downloadPromise;
+  },
+  async (page: Page): Promise<void> => {
+    await page
+      .getByRole('button', {
+        name: 'ปริ้นท์ พ.ร.บ',
+      })
+      .first()
+      .click();
 
-  return controlIndex === 0
-    ? controls.first()
-    : controls.nth(controlIndex);
-}
+    const closeButton = page.getByRole('button', {
+      name: 'Close',
+      exact: true,
+    });
 
-function assertDropdownValueNotEmpty(
-  controlType: string,
-  value: string
-): void {
-  if (value === '') {
-    throw new Error(
-      [
-        `${controlType}: value cannot be empty.`,
-        `Empty string matches ALL options (strict mode violation).`,
-        `Provide the explicit option text (e.g., 'งานใหม่', '(All)').`,
-      ].join('\n')
-    );
-  }
-}
+    await expect(closeButton).toBeVisible({
+      timeout: 10_000,
+    });
 
-async function applyControl(
+    await closeButton.click();
+  },
+];
+
+async function applyAction(
   page: Page,
-  controlData: DashboardPrintControl
+  action: DashboardPrintAction,
+  locatorIndex: number
 ): Promise<void> {
-  switch (controlData.controlType) {
-    case 'textbox': {
-      const textboxes = page.getByRole('textbox');
-      const textbox = getIndexedControl(
-        textboxes,
-        controlData.controlIndex
-      );
+  const locator = locators[locatorIndex];
 
-      await expect(textbox).toBeVisible({
-        timeout: 30_000,
-      });
+  if (!locator) {
+    throw new Error(
+      `No locator configured for index ${locatorIndex}`
+    );
+  }
 
-      await textbox.click();
-      await textbox.fill(controlData.value);
+  switch (action) {
+    case 'click': {
+      await locator(page);
+      break;
+    }
 
-      await expect(textbox).toHaveValue(
-        controlData.value
-      );
+    case 'download': {
+      const downloadPromise = page.waitForEvent('download');
+      await locator(page);
+      await downloadPromise;
+      break;
+    }
 
+    case 'clickWithClose': {
+      await locator(page);
       break;
     }
 
     default: {
-      const _exhaustive: never =
-        controlData as never;
-
+      const _exhaustive: never = action;
       throw new Error(
-        `Unhandled DashboardPrintControl: ${JSON.stringify(controlData)}`
+        `Unhandled DashboardPrintAction: ${String(_exhaustive)}`
       );
     }
   }
 }
 
-export async function applyPrintControl(
+export async function applyPrintAction(
   page: Page,
-  testData: { control: DashboardPrintControl }
+  testData: DashboardPrintTestCase
 ): Promise<void> {
-  await applyControl(page, testData.control);
-}
-
-export function assertPrintDropdownValueNotEmpty(
-  value: string
-): void {
-  assertDropdownValueNotEmpty(
-    'dropdown',
-    value
+  await applyAction(
+    page,
+    testData.action,
+    testData.locatorIndex
   );
-}
-
-export function assertNamedControlVisible(
-  locator: Locator,
-  accessibleName: string
-): Promise<void> {
-  return expect(locator, `named control not found: ${accessibleName}`).toBeVisible({
-    timeout: 30_000,
-  });
 }

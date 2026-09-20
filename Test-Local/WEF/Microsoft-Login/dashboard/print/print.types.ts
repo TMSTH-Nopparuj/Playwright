@@ -1,15 +1,11 @@
-export type DashboardPrintControl = {
-  controlType: 'textbox';
-  controlIndex: number;
-  value: string;
-};
+export type DashboardPrintAction =
+  | 'click'
+  | 'download'
+  | 'clickWithClose';
 
 export interface DashboardPrintTestCase {
   testCaseId: string;
   scenario: string;
-
-  control: DashboardPrintControl;
-
-  runInitialSearch?: boolean;
-  expectedText?: string;
+  action: DashboardPrintAction;
+  locatorIndex: number;
 }

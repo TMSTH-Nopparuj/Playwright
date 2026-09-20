@@ -1,20 +1,7 @@
-import {
-  expect,
-  Page,
-  test,
-} from '@playwright/test';
+import { expect, Page, test } from '@playwright/test';
 
-import {
-  printTestCases,
-} from './print.data';
-
-import {
-  applyPrintControl,
-} from './print.helper';
-
-import {
-  verifyNavigatedTo,
-} from '../../../_shared/verify-helpers';
+import { printTestCases } from './print.data';
+import { applyPrintAction } from './print.helper';
 
 const APPLICATION_URL =
   'https://apps-uat.tokiomarinesafety.co.th/wfe/';
@@ -39,10 +26,9 @@ async function enterWefDashboard(
   await page.goto(APPLICATION_URL);
 
   await page
-    .getByText(
-      'TMSTH Staff สำหรับพนักงานบริษัท',
-      { exact: true }
-    )
+    .getByText('TMSTH Staff สำหรับพนักงานบริษัท', {
+      exact: true,
+    })
     .click();
 
   await page.locator('span').first().click();
@@ -62,14 +48,12 @@ async function enterWefDashboard(
 
   await waitForLoading(page);
 
-  await verifyNavigatedTo(page, {
-    urlPattern: /dashboard/i,
-    actionContext: 'After login to dashboard',
+  await expect(page).toHaveURL(/dashboard/i, {
     timeout: 30_000,
   });
 }
 
-async function clearPrintFilters(
+async function clearFilters(
   page: Page
 ): Promise<void> {
   const clearButton = page.getByRole('button', {
@@ -81,7 +65,6 @@ async function clearPrintFilters(
   });
 
   await clearButton.click();
-
   await waitForLoading(page);
 }
 
@@ -97,106 +80,41 @@ async function clickSearch(
   });
 
   await searchButton.click();
-
   await waitForLoading(page);
 }
 
-async function openWorkOrderRow(
+async function defaultVerify(
   page: Page
 ): Promise<void> {
-  const workOrderButton = page
-    .getByRole('button', {
-      name: 'ใบแจ้งงาน',
-    })
-    .first();
-
-  await expect(workOrderButton).toBeVisible({
-    timeout: 10_000,
-  });
-
-  await workOrderButton.click();
-
-  await waitForLoading(page);
-}
-
-async function closePrintDialog(
-  page: Page
-): Promise<void> {
-  const closeButton = page.getByRole('button', {
-    name: 'ปิด',
-    exact: true,
-  });
-
-  const closeVisible = await closeButton
-    .isVisible({ timeout: 5_000 })
-    .catch(() => false);
-
-  if (closeVisible) {
-    await closeButton.click();
-    await expect(closeButton).toBeHidden({
-      timeout: 10_000,
+  const errorDialog = page
+    .locator('[role="dialog"], .modal, .swal2-popup')
+    .filter({
+      hasText: /error|ผิดพลาด|เกิดข้อผิดพลาด/i,
     });
-  }
-}
 
-async function printWorkOrder(
-  page: Page
-): Promise<void> {
-  const printButton = page
-    .getByRole('button', {
-      name: 'ปริ้นท์ พ.ร.บ',
-    })
-    .first();
-
-  await expect(printButton).toBeVisible({
+  await expect(errorDialog).toHaveCount(0, {
     timeout: 10_000,
   });
 
-  await printButton.click();
-
-  await page
-    .getByRole('button', {
-      name: 'Close',
-      exact: true,
-    })
-    .click();
-
-  await waitForLoading(page);
+  await expect(page).toHaveURL(/dashboard/i, {
+    timeout: 10_000,
+  });
 }
 
 test.describe('Dashboard Print', () => {
   test.beforeEach(async ({ page }) => {
     await enterWefDashboard(page);
+    await clearFilters(page);
+    await clickSearch(page);
   });
 
   for (const testData of printTestCases) {
-    test(`${testData.testCaseId} - ${testData.scenario}`, async ({ page }) => {
-      await test.step('Clear print filters', async () => {
-        await clearPrintFilters(page);
-      });
-
-      if (testData.runInitialSearch) {
-        await test.step('Run initial search', async () => {
-          await clickSearch(page);
-        });
+    test(
+      `${testData.testCaseId} - ${testData.scenario}`,
+      async ({ page }) => {
+        await applyPrintAction(page, testData);
+        await defaultVerify(page);
       }
-
-      await test.step('Apply print control', async () => {
-        await applyPrintControl(page, testData);
-      });
-
-      await test.step('Open work order and print', async () => {
-        await openWorkOrderRow(page);
-        await closePrintDialog(page);
-        await printWorkOrder(page);
-      });
-
-      await test.step('Verify dashboard ready', async () => {
-        await verifyNavigatedTo(page, {
-          urlPattern: /dashboard/i,
-          actionContext: 'After print workflow',
-        });
-      });
-    });
+    );
   }
 });

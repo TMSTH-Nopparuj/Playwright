@@ -20,48 +20,6 @@ export const dashboardSearchTestCases:
 
     {
       testCaseId: 'TC002',
-      scenario: 'Search by Coverage Start Date',
-
-      control: {
-        controlType: 'dateTextbox',
-        controlIndex: 0,
-        value: '10',
-      },
-
-      runInitialSearch: true,
-      expectedText: '10',
-    },
-
-    {
-      testCaseId: 'TC003',
-      scenario: 'Search by Coverage End Date',
-
-      control: {
-        controlType: 'dateTextbox',
-        controlIndex: 1,
-        value: '30',
-      },
-
-      runInitialSearch: true,
-      expectedText: '30',
-    },
-
-    {
-      testCaseId: 'TC004',
-      scenario: 'Search by Transaction Status',
-
-      control: {
-        controlType: 'dropdown',
-        controlIndex: 0,
-        value: 'งานใหม่',
-      },
-
-      runInitialSearch: true,
-      expectedText: 'งานใหม่',
-    },
-
-    {
-      testCaseId: 'TC005',
       scenario: 'Search by Insured Name',
 
       control: {
@@ -75,12 +33,55 @@ export const dashboardSearchTestCases:
     },
 
     {
+      testCaseId: 'TC003',
+      scenario: 'Search by Coverage Start Date',
+
+      control: {
+        controlType: 'dateTextbox',
+        controlIndex: 0,
+        value: '10',
+      },
+
+      runInitialSearch: true,
+      expectedText: '10',
+    },
+
+    {
+      testCaseId: 'TC004',
+      scenario: 'Search by Coverage End Date',
+
+      control: {
+        controlType: 'dateTextbox',
+        controlIndex: 1,
+        value: '30',
+      },
+
+      runInitialSearch: true,
+      expectedText: '30',
+    },
+
+    {
+      testCaseId: 'TC005',
+      scenario: 'Search by Transaction Status',
+
+      control: {
+        controlType: 'dropdown',
+        controlIndex: 0,
+        value: 'งานใหม่',
+      },
+
+      runInitialSearch: true,
+      expectedText: 'งานใหม่',
+    },
+
+    {
       testCaseId: 'TC006',
       scenario: 'Search by Car Model',
 
       control: {
         controlType: 'namedDropdown',
-        dropdownText: '-- กรุณาเลือกรุ่นรถยนต์ --',
+        dropdownText:
+          '-- กรุณาเลือกรุ่นรถยนต์ --',
         value: 'E-HS9',
       },
 
@@ -96,11 +97,11 @@ export const dashboardSearchTestCases:
         controlType: 'namedTextbox',
         accessibleName:
           'หมายเลขตัวถัง / หมายเลขเครื่อง',
-        value: 'CAM220PT2JJE04221F',
+        value: '1HGBH41JXMN109186',
       },
 
       runInitialSearch: true,
-      expectedText: 'CAM220PT2JJE04221F',
+      expectedText: '1HGBH41JXMN109186',
     },
 
     {

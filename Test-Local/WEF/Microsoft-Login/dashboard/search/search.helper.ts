@@ -27,6 +27,34 @@ function getIndexedControl(
     : controls.nth(controlIndex);
 }
 
+/**
+ * Guard: value ต้องไม่เป็น empty string สำหรับ dropdown-type controls
+ *
+ * เหตุผล:
+ * page.getByRole('option', { name: '', exact: false })
+ * → empty string เป็น substring ของทุก string
+ * → แมทช์ทุก option บนหน้า
+ * → strict mode violation
+ *
+ * ถ้าเจตนาทดสอบ "ไม่เลือก option" ให้ใช้ flow อื่น
+ * (เช่น ไม่เรียก applyControl แล้วไป verify state โดยตรง)
+ */
+function assertDropdownValueNotEmpty(
+  controlType: string,
+  value: string
+): void {
+  if (value === '') {
+    throw new Error(
+      [
+        `${controlType}: value cannot be empty.`,
+        `Empty string matches ALL options (strict mode violation).`,
+        `Provide the explicit option text (e.g., 'E-HS9', '(All)').`,
+        `If you want to test "no selection", use a different flow.`,
+      ].join('\n')
+    );
+  }
+}
+
 async function applyControl(
   page: Page,
   controlData: DashboardSearchControl
@@ -95,9 +123,36 @@ async function applyControl(
         }
       );
 
-      await expect(textbox).toBeVisible({
-        timeout: 30_000,
-      });
+      // Guard: ให้ error message ที่บอกวิธีแก้เมื่อหาไม่เจอ
+      try {
+        await expect(textbox).toBeVisible({
+          timeout: 30_000,
+        });
+      } catch (error) {
+        const originalMessage =
+          error instanceof Error
+            ? error.message
+            : String(error);
+
+        throw new Error(
+          [
+            `namedTextbox not found: accessibleName='${controlData.accessibleName}'`,
+            ``,
+            `Possible causes:`,
+            `  1. Field has no accessible name on this page`,
+            `     (codegen shows getByRole('textbox').nth(N) instead of by name)`,
+            `  2. Label text does not match — check whitespace, slashes, Thai chars`,
+            `  3. Field is not yet rendered — check page state`,
+            ``,
+            `Suggestions:`,
+            `  - Verify actual label in _locators/<feature>.ts`,
+            `  - If field is index-based, use controlType: 'textbox' with controlIndex: N`,
+            ``,
+            `Original error:`,
+            originalMessage,
+          ].join('\n')
+        );
+      }
 
       await textbox.click();
       await textbox.fill(controlData.value);
@@ -110,6 +165,12 @@ async function applyControl(
     }
 
     case 'dropdown': {
+      // Guard: empty value ทำให้ option filter จับทุกตัว
+      assertDropdownValueNotEmpty(
+        'dropdown',
+        controlData.value
+      );
+
       const dropdowns = page.locator(
         [
           '.ng-select-searchable',
@@ -144,6 +205,12 @@ async function applyControl(
     }
 
     case 'namedDropdown': {
+      // Guard: empty value ทำให้ option filter จับทุกตัว
+      assertDropdownValueNotEmpty(
+        'namedDropdown',
+        controlData.value
+      );
+
       const dropdown = page
         .locator('ng-select')
         .filter({

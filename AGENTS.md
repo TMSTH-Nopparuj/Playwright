@@ -13,6 +13,7 @@ Instructions for AI agents (GitHub Copilot, Cursor, Claude, ChatGPT) working wit
 ```
 ttest-playwright/
 ├── AGENTS.md                            # This file (agent instructions)
+├── AGENT_PROMPTS.md                     # Prompt templates for humans
 ├── analyze-project.bat / .ps1           # JSON structure generator
 ├── .agent-cache/                        # JSON cache (gitignored)
 │   └── project-structure.json
@@ -28,22 +29,29 @@ ttest-playwright/
         └── <AccessFlow>/                # e.g. Microsoft-Login, Admin-Login
             ├── project.config.json      # { "authType": "microsoft|form|none" }
             │
-            ├── <Module>/                # Nested — multiple features or complex
-            │   ├── _locators/           # Module-level (shared across features)
-            │   │   ├── search.ts        # Named by feature
-            │   │   ├── export.ts
-            │   │   └── pagination.ts
+            ├── <Module>/                # e.g. dashboard, car-model
+            │   ├── _locators/           # Module-level, gitignored — field codegen
+            │   │   ├── .gitkeep
+            │   │   ├── search.ts
+            │   │   └── print.ts
             │   │
-            │   └── <Feature>/           # Feature folder (no _locators inside)
+            │   ├── _flows/              # Module-level, gitignored — full-flow codegen
+            │   │   ├── .gitkeep
+            │   │   ├── search.ts
+            │   │   └── print.ts
+            │   │
+            │   ├── _scenarios/          # Module-level, COMMITTED — QA test scenarios (CSV)
+            │   │   ├── search.csv
+            │   │   └── print.csv
+            │   │
+            │   └── <Feature>/           # 4-file feature pattern
             │       ├── <feature>.spec.ts
             │       ├── <feature>.helper.ts
             │       ├── <feature>.types.ts
             │       └── <feature>.data.ts
             │
-            └── <SimpleModule>/          # Flat — single feature, simple CRUD
-                ├── <name>.spec.ts       # e.g. car-model-add.spec.ts
-                └── _locators/           # optional (module-level)
-                    └── <name>.ts
+            └── _shared/                 # Shared utilities across features
+                └── verify-helpers.ts
 ```
 
 ### Auth types
@@ -59,7 +67,28 @@ ttest-playwright/
 | Structure | Use when | Example |
 |---|---|---|
 | **Flat** (spec directly in module) | Simple CRUD, single feature, <10 test cases | `car-model/car-model-add.spec.ts` |
-| **Nested** (feature folder + 4 files) | Multiple features per module, OR 3+ control types, OR 10+ data-driven cases | `dashboard/search/search.spec.ts` + `.helper.ts` + `.types.ts` + `.data.ts` |
+| **Nested** (feature folder + 4 files) | Multiple features per module, OR 3+ actions, OR 10+ data-driven cases | `dashboard/print/print.spec.ts` + `.helper.ts` + `.types.ts` + `.data.ts` |
+
+### Three module-level folders
+
+| Folder | Contents | Owner | Committed? | Purpose |
+|---|---|---|---|---|
+| `_locators/` | Field codegen (single-page interactions) | Dev | ❌ gitignored | Field inventory: what's on the page |
+| `_flows/` | Full-flow codegen (navigate → interact → submit) | Dev | ❌ gitignored | Sequence: how the feature is used end-to-end |
+| `_scenarios/` | QA test scenarios (CSV) | **QA** | ✅ committed | Intent: what to test + how (step-by-step) |
+
+Only `.gitkeep` is committed inside `_locators/` and `_flows/`. Everything in `_scenarios/` is committed.
+
+### What counts as a feature?
+
+A feature = **one user-facing action** with its own success criteria.
+
+Multiple actions on the same page can be different features:
+- `dashboard/search` → filter records, verify results
+- `dashboard/print` → print work order, verify download/dialog
+- `dashboard/export` → export data, verify file
+
+Rule: if two actions have **different success criteria**, they are different features — even on the same page.
 
 ---
 
@@ -82,8 +111,10 @@ ttest-playwright/
 
 - `session-storage.json`, `state.json`, `profile/`
 - `.env` files
-- `_locators/**` (raw codegen may include real UI state)
+- `_locators/**` and `_flows/**` — contents only (`.gitkeep` is committed)
 - `.agent-cache/*.json`
+
+Contents of `_scenarios/**` are **always committed** — they are QA-owned truth.
 
 ---
 
@@ -97,7 +128,7 @@ AI agents can discover project structure via two paths — user chooses per sess
 
 **Generate:** Run `analyze-project.bat` (or `.ps1`) — scans `Test-Local/` and writes JSON
 
-**Contents:** All projects → access flows → modules → features → files, control types, test case count
+**Contents:** All projects → access flows → modules → features → files, patterns, test case count
 
 **When to use:**
 - Chat AI (Claude, ChatGPT web) — paste JSON as context
@@ -115,120 +146,142 @@ AI agents can discover project structure via two paths — user chooses per sess
 
 ## Section 4: Pattern Design Workflow
 
-When adding a scenario, identify which of 3 cases applies:
+Three cases cover all changes to a feature:
 
-### Case 1 — Add data row (pattern stable, control type covered)
+### Case 1 — Add test case(s) under existing pattern
 
-**Signal:** Feature exists, control type in `types.ts` already covers scenario
+**Signal:** Feature exists, all steps in new scenarios use verbs the helper already handles
 
-**Action:** Add one object to `<feature>.data.ts`
+**Action:** Append rows to `_scenarios/<feature>.csv` → run Case 1 → AI appends to `data.ts`
 
-**Files touched:** 1 (`data.ts`)
+**Files touched:** 1 (`data.ts`) + `_scenarios/<feature>.csv` (dev/QA appends)
 
-**Example:** `Search by Receipt = "HQ0000021"` — `textbox` case already exists
+**Prompt template:** See `AGENT_PROMPTS.md` → Case 1
 
-### Case 2 — Extend pattern (feature exists, new control type)
+### Case 2 — Extend pattern (new step verb)
 
-**Signal:** Feature exists but scenario requires new control type (e.g., checkbox filter)
-
-**Action:**
-1. Add case to `<feature>.types.ts` union
-2. Add case to `<feature>.helper.ts` switch
-3. Add test case(s) to `<feature>.data.ts`
-
-**Files touched:** 3 (`types.ts` + `helper.ts` + `data.ts`)
-
-### Case 3 — New feature (new pattern, new folder)
-
-**Signal:** Feature doesn't exist — concept differs from existing features (e.g., Search → Export)
+**Signal:** New scenario has a step verb (e.g., `Upload`, `Drag`) not covered by helper's switch
 
 **Action:**
-1. Codegen target page → save raw output to `<module>/_locators/<feature>.ts`
-2. Get test scenarios (from QA's Excel, business req, or dev observation)
-3. Create feature folder: `<module>/<feature>/`
-4. Reference nearest similar feature for pattern
-5. Create 4 files: `spec.ts` + `helper.ts` + `types.ts` + `data.ts`
-6. AI composes test steps from scenarios + locators
+1. Add verb to `helper.ts` switch
+2. Extend `types.ts` `Step` union
+3. Update AGENTS.md Section 9 verb list
 
-**Files touched:** 4 new files in new folder + 1 locator file in module
+**Files touched:** 2-3 (`types.ts` + `helper.ts` + optionally AGENTS.md)
+
+**Prompt template:** See `AGENT_PROMPTS.md` → Case 2
+
+### Case 3 — New feature (bootstrap 4 files + seed TCs)
+
+**Signal:** Feature doesn't exist
+
+**Action:**
+1. Codegen field inventory → `<module>/_locators/<feature>.ts`
+2. Codegen full flow → `<module>/_flows/<feature>.ts`
+3. QA prepares `<module>/_scenarios/<feature>.csv` with all initial scenarios
+4. Choose pattern archetype (Section 8)
+5. Run Case 3 → AI generates 4 files with **populated** data.ts
+
+**Files touched:** 4 new files + 3 codegen/scenario files in module
+
+**Prompt template:** See `AGENT_PROMPTS.md` → Case 3
 
 ### Decision tree
 
 ```
 New scenario request
     │
-    ├─► Same feature as existing?
+    ├─► Feature exists?
     │     │
-    │     ├─► Yes ─► Control type covered in types.ts?
-    │     │         │
-    │     │         ├─► Yes ─► Case 1 (add data row)
-    │     │         └─► No  ─► Case 2 (extend types + helper)
+    │     ├─► No  ─► Case 3 (bootstrap + seed)
     │     │
-    │     └─► No ──► Case 3 (new folder + 4 files + module _locators)
+    │     └─► Yes ─► Do all step verbs exist in helper?
+    │               │
+    │               ├─► Yes ─► Case 1 (append to data.ts)
+    │               └─► No  ─► Case 2 (extend helper) → then Case 1
 ```
 
 ---
 
-## Section 5: Locator Workflow
+## Section 5: Codegen + Scenarios Workflow
 
-**Rule:** AI does not generate raw locators. Locators come from manual Playwright codegen.
+Three artifacts feed into feature generation. Each has different lifecycle and ownership.
 
-**Location:** `<module>/_locators/<feature>.ts` — module-level, named by feature
+### Codegen (`_flows/` + `_locators/`)
 
-**Rationale:** Multiple features in same module often share fields (e.g., dashboard search + export both use dealer filter). Module-level enables reuse; feature-named files preserve ownership.
+**Rule:** AI does not generate raw codegen. Both come from manual Playwright codegen.
+
+**Location:**
+- `<module>/_locators/<feature>.ts` — one file per feature, field inventory
+- `<module>/_flows/<feature>.ts` — one file per feature, full flow (login → interact → submit)
+
+**Codegen scope:** ONE feature per file. If codegen captures multiple distinct actions with different success criteria, split into multiple `_flows/` files → these become multiple features (Section 1).
+
+**Regenerate when:** UI changes, new fields added, flow steps change
+
+### Scenarios (`_scenarios/*.csv`)
+
+**Rule:** QA writes CSV. Dev may edit but QA owns the source of truth.
+
+**Location:** `<module>/_scenarios/<feature>.csv` — one file per feature
+
+**Format:** 5 columns
+```csv
+TC-ID,Module,Feature,Scenario,Steps
+TC012,Dashboard,Print,Print Job Sheet,"1. Click Print button on a record
+2. Select Print option"
+TC013,Dashboard,Print,Export Job Sheet to PDF,"1. Click Print button on a record
+2. Select PDF option"
+```
+
+**Steps column:**
+- Multi-line inside quotes
+- Numbered prefixes (`1.`, `2.`) for QA readability — AI strips when parsing
+- Free-form English, but MUST start with a verb from Section 9 vocabulary
+
+**Regenerate CSV when:** QA adds new scenarios, priorities change. Never overwritten by AI.
 
 ### Workflow
 
-1. Dev runs codegen on target page → copy raw output
-2. Paste into `<module>/_locators/<feature>.ts` (create `_locators/` if missing)
-3. Ask AI: *"generate feature based on `_locators/<feature>.ts` + scenarios below"* + paste scenarios
+1. Dev runs codegen twice — one session for `_locators/`, one for `_flows/`
+2. QA writes CSV in `_scenarios/`
+3. User invokes Case 3 (or Case 1/2 as appropriate)
 4. AI reads:
-   - `<module>/_locators/<feature>.ts` (locators — what's on the page)
-   - Provided scenarios (what to test)
-   - Reference feature's `helper.ts` + `types.ts` (target pattern)
-5. AI generates skeleton — human reviews + applies
-6. Locator file stays as reference for future changes
-
-### Naming convention
-
-- **Per feature** — `search.ts`, `export.ts`, `pagination.ts`
-- **Shared fields** (optional) — `common-fields.ts` when 3+ features share fields
-- **Never commit** — gitignored (`**/_locators/`)
+   - AGENTS.md — pattern rules (Sections 8, 9)
+   - `<module>/_flows/<feature>.ts` — sequence
+   - `<module>/_locators/<feature>.ts` — fields
+   - `<module>/_scenarios/<feature>.csv` — scenarios
+5. AI generates/updates the 4 pattern files
+6. Human reviews + applies
 
 ---
 
 ## Section 6: Adding a New Feature Workflow
 
-1. **Codegen exploration + save**
-   - Open target page
-   - Interact with every field, button, dropdown for the new feature
-   - Save raw output to `<module>/_locators/<feature>.ts`
+1. **Codegen** — two sessions
+   - Session A: click every field/button once → save `_locators/<feature>.ts`
+   - Session B: complete one end-to-end task → save `_flows/<feature>.ts`
 
-2. **Gather test scenarios**
-   - From QA's Excel — primary source
-   - From business requirements — supplementary
-   - From dev observation — for edge cases
+2. **Prepare CSV** — QA writes `_scenarios/<feature>.csv` with initial scenarios
 
-3. **Choose structure** (flat vs nested — Section 1)
+3. **Choose pattern archetype** (Section 8)
 
-4. **Prompt AI with:**
-   - Locators file path
-   - Scenarios list
-   - Reference pattern (existing similar feature)
+4. **Choose structure** (flat vs nested — Section 1)
 
-5. **AI generates:**
-   - Feature folder + 4 files
-   - Types union based on locators
-   - Helper switch mapping scenarios to actions
-   - Data cases from scenarios
-   - Test spec that composes flow
+5. **Run Case 3 prompt** (see AGENT_PROMPTS.md)
 
-6. **Human reviews:**
-   - Verify locator strategy (index, name, RegExp)
-   - Fill any TODO markers (specific values from QA)
-   - Adjust assertions if needed
+6. **AI generates:**
+   - 4-file skeleton in `<module>/<feature>/`
+   - `data.ts` **populated** from CSV rows
 
-7. **Run + verify + regenerate JSON cache** — `analyze-project.bat`
+7. **Human reviews:**
+   - Verify spec.ts flow matches `_flows/`
+   - Verify helper.ts step handlers work against the actual page
+   - Verify data.ts TCs match CSV
+
+8. **Regenerate JSON cache** — `analyze-project.bat`
+
+9. **Add more TCs later** via Case 1 (append CSV → Case 1 prompt)
 
 ---
 
@@ -242,23 +295,169 @@ New scenario request
 ### When to create new AGENTS.md (nested)
 
 - **Never** — this framework is universal by design
-- If rules must differ per project → discuss refactoring framework instead
 
 ### When to extract to `_shared/`
 
 - Helper function used across 3+ specs → extract
-- Login flow used across 3+ specs → extract to `<project>/_shared/`
+- Login/navigation flow used across 3+ specs → extract to `<project>/_shared/`
 
-### When to move locator to `common-fields.ts`
+### When to split a feature into two
 
-- Field used in 3+ features → extract to shared file
-- Field used in 1-2 features → keep in feature-specific file
+- Codegen has two paths with different success criteria → split
+- `_scenarios/` CSV has scenarios that can't share the same verify → split
+
+---
+
+## Section 8: 4-File Pattern (Reference)
+
+Every nested feature has 4 files. The **structure** below is fixed. The **content** is derived from that feature's `_flows/`, `_locators/`, and `_scenarios/`.
+
+### Pattern archetypes
+
+| Archetype | Signal | Data shape | Example feature |
+|---|---|---|---|
+| **A: Search Pattern** (Fill-and-Submit) | User fills fields, submits, verifies result | `controlType`-based union (legacy) OR step-based union | `dashboard/search` (legacy — controlType-based) |
+| **B: Action Pattern** (Click-and-Verify) | User clicks action buttons, verifies dialog/download/navigation | Step-based union | `dashboard/print` |
+
+**New features MUST use step-based union.** The `controlType`-based shape (in existing `search` feature) is grandfathered and not required to migrate.
+
+### `<feature>.types.ts` — data shape
+
+**Step-based union (canonical for new features):**
+
+```typescript
+export type Step =
+  | { action: 'click'; target: string }
+  | { action: 'fill'; target: string; value: string }
+  | { action: 'select'; target: string; option: string }
+  | { action: 'verify'; assertion: string };
+
+export interface <Feature>TestCase {
+  testCaseId: string;
+  scenario: string;
+  steps: Step[];
+}
+```
+
+**controlType-based union (legacy — do not use for new features):**
+
+```typescript
+// See dashboard/search/search.types.ts for reference
+export type <Feature>Control =
+  | { controlType: 'textbox'; controlIndex: number; value: string }
+  | { controlType: 'namedTextbox'; accessibleName: string; value: string }
+  | ...;
+```
+
+### `<feature>.helper.ts` — step application
+
+**Structure:**
+- **Exported function** `apply<Feature>Steps(page, testData)` — entry point called by spec.ts. Loops over `testData.steps` and delegates to `applyStep`.
+- **Internal function** `applyStep(page, step)` — switch on `step.action`. Each case:
+  1. Locate the target (from `_locators/` reference)
+  2. `expect(...).toBeVisible({ timeout })`
+  3. Perform the action
+  4. Assert state (when applicable)
+- **Verify case** — hybrid parser. `step.assertion` is free-form text; helper recognizes patterns (Section 9) and executes matching assertion.
+- **Guards** (mandatory):
+  - Empty-value guard for `fill` and `select` actions
+  - Not-found hint for `click` targets (better error than raw timeout)
+  - `never`-type default case in the switch
+
+Feature-specific setup (login, navigation, wait for loading) lives in **spec.ts**, not here.
+
+### `<feature>.spec.ts` — orchestration
+
+**Structure:**
+- **Constants** (URL, timeouts specific to feature)
+- **Setup helpers derived from `_flows/`**:
+  - `waitForLoading(page)` if the feature has loading states
+  - `enter<Feature>Page(page)` — navigate + login + reach the feature's page
+- **`defaultVerify(page, testData)`** — feature-level default verify. Runs at the end of every test unless the CSV Steps explicitly include a `Verify` step.
+- **`test.describe('<Feature Name>', ...)`** wrapping all tests
+- **`test.beforeEach`** — calls `enter<Feature>Page`
+- **`for (const testData of <feature>TestCases)`** loop — one test per data row
+- Each test:
+  ```typescript
+  await apply<Feature>Steps(page, testData);
+  await defaultVerify(page, testData);
+  ```
+
+### `<feature>.data.ts` — test cases
+
+**Structure:**
+- Import types
+- Export const array `<feature>TestCases: <Feature>TestCase[]` with type annotation
+
+**For Case 3 bootstrap:** array is **populated from CSV** — each CSV row → one TestCase.
+
+**For Case 1 expansion:** array grows as CSV grows.
+
+### How the 4 files connect
+
+```
+_scenarios/<feature>.csv
+        │
+        ▼ (Case 3 / Case 1 reads)
+data.ts   ──imports types──►   types.ts
+   │
+   └──consumed by──►   spec.ts   ──imports──►   helper.ts   ──imports types──►   types.ts
+                          │
+                          └──imports──►   _shared/verify-helpers.ts
+```
+
+`_flows/<feature>.ts` and `_locators/<feature>.ts` are **NOT imported** at runtime — they are references AI reads at generation time. `_scenarios/<feature>.csv` is imported ONLY conceptually (AI reads it to populate `data.ts`).
+
+---
+
+## Section 9: Step Vocabulary
+
+QA writes CSV steps in free-form English but MUST start each step with a verb from the frozen list below. Helper parses verbs, everything after the verb is target/value.
+
+### Action verbs (helper handles these)
+
+| Verb | Syntax | Example | Helper action |
+|---|---|---|---|
+| **Click** | `Click <target>` | `Click Print button on a record` | `page.getByRole('button', { name }).click()` |
+| **Fill** | `Fill <target> with <value>` | `Fill Receipt textbox with HQ0000020` | `page.getByRole('textbox', { name }).fill(value)` |
+| **Select** | `Select <option> from <target>` OR `Select <option> option` | `Select PDF option` | Open dropdown → click matching option |
+| **Verify** | `Verify <assertion>` | `Verify dialog opens` | Hybrid parse — see below |
+
+### Verify sub-verbs (hybrid parser inside `Verify`)
+
+| Sub-verb | Example | Assertion |
+|---|---|---|
+| `visible` / `opens` / `shows` | `Verify dialog opens` | `expect(el).toBeVisible()` |
+| `hidden` / `closes` | `Verify loading closes` | `expect(el).toBeHidden()` |
+| `contains` | `Verify page contains HQ0000020` | `expect(page.getByText(text)).toBeVisible()` |
+| `downloaded` | `Verify PDF downloaded` | Wait for `download` event |
+| `navigated` / `URL matches` | `Verify URL matches /dashboard/` | `expect(page).toHaveURL(pattern)` |
+
+### Extending the vocabulary
+
+If QA writes a step verb not in the list:
+1. Case 1 STOPS and reports which verb is unknown
+2. User runs Case 2 to add the verb to helper + types + this section
+3. Case 1 re-runs successfully
+
+**Never let AI infer new verbs.** New verbs = Case 2 explicitly.
+
+### Feature-level default verify
+
+Each feature has a `defaultVerify` function in spec.ts that runs at the end of every test. It answers "did this feature complete without breaking?" — a safety net.
+
+Examples:
+- **Print:** `defaultVerify` = no error dialog + still on dashboard
+- **Search:** `defaultVerify` = no error + result count > 0 (or matches expected)
+- **Export:** `defaultVerify` = download completed (or file exists in downloads folder)
+
+If a CSV Steps column includes explicit `Verify` steps, those run AS PART OF the steps loop. `defaultVerify` still runs at the end regardless.
 
 ---
 
 ## Contribution notes
 
-- Update this file when new pattern emerges that AI should know
+- Update this file when new pattern archetype emerges or new verb is added
 - Keep sections concise — AI ignores overly long docs
 - Prefer **pointing to reference implementations** over inlining long examples
 - Preserve Thai UI labels exactly (don't romanize or translate)

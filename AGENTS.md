@@ -13,7 +13,11 @@ Instructions for AI agents (GitHub Copilot, Cursor, Claude, ChatGPT) working wit
 ```
 ttest-playwright/
 ├── AGENTS.md                            # This file (agent instructions)
-├── AGENT_PROMPTS.md                     # Prompt templates for humans
+├── AGENT_PROMPTS.md                     # Prompt templates index
+├── doc/prompts/                         # Case rules for AI
+│   ├── case-1-update-tcs.md
+│   ├── case-2-extend-helper.md
+│   └── case-3-bootstrap.md
 ├── analyze-project.bat / .ps1           # JSON structure generator
 ├── .agent-cache/                        # JSON cache (gitignored)
 │
@@ -26,16 +30,16 @@ ttest-playwright/
             ├── project.config.json
             │
             ├── <Module>/                # e.g. dashboard, car-model
-            │   ├── _locators/           # Module-level, gitignored — per-TC snippets
+            │   ├── _locators/           # Module-level, gitignored — locator array
             │   │   ├── .gitkeep
-            │   │   └── <feature>.ts     # 1 snippet per TC, ordered by CSV
+            │   │   └── <feature>.ts     # Array of locator functions, order = index
             │   │
-            │   ├── _flows/              # Module-level, gitignored — full-flow codegen
+            │   ├── _flows/              # Module-level, gitignored — flow templates
             │   │   ├── .gitkeep
-            │   │   └── <feature>.ts     # setup + test actions, marked
+            │   │   └── <feature>.ts     # setup + per-test flow with // === DATA === marker
             │   │
             │   ├── _scenarios/          # Module-level, COMMITTED — QA scenarios
-            │   │   └── <feature>.csv    # 1 row per TC, order matches _locators/
+            │   │   └── <feature>.csv    # 5 columns, Value with | action markers
             │   │
             │   └── <Feature>/           # 4-file feature pattern
             │       ├── <feature>.spec.ts
@@ -60,35 +64,41 @@ ttest-playwright/
 | Structure | Use when | Example |
 |---|---|---|
 | **Flat** | Simple CRUD, single feature, <10 test cases | `car-model/car-model-add.spec.ts` |
-| **Nested** | Multiple features per module, OR 3+ action types | `dashboard/print/print.spec.ts` + 3 files |
+| **Nested** | Multiple features per module | `dashboard/search/search.spec.ts` + 3 files |
 
 ### Three module-level folders
 
 | Folder | Owner | Committed? | Purpose |
 |---|---|---|---|
-| `_locators/` | Dev | ❌ | Per-TC action snippets — 1 per row |
-| `_flows/` | Dev | ❌ | Full-flow codegen — setup + test-action patterns |
+| `_locators/` | Dev | ❌ | Array of locator functions (order-indexed) |
+| `_flows/` | Dev | ❌ | Flow template with SETUP / PER TEST / `// === DATA ===` markers |
 | `_scenarios/` | **QA** | ✅ | Test scenarios (CSV) — 1 row per TC |
 
 ### What counts as a feature?
 
 One user-facing action with its own success criteria. Multiple actions on the same page = different features:
-- `dashboard/search` — filter records, verify results
-- `dashboard/print` — print work order, verify dialog/download
-- `dashboard/export` — export data, verify file
+- `dashboard/search` — filter records
+- `dashboard/print` — print work order
+- `dashboard/export` — export data
 
 ---
 
 ## Section 2: Universal Principles
 
-### Locator rules (for HUMAN-written codegen in `_flows/` and `_locators/`)
+### Design principles
+
+1. **AI does not generate selectors** — transcribes from dev's codegen in `_flows/` and `_locators/`
+2. **Order is source of truth** — `_locators/` index N ↔ CSV Value item N
+3. **Universal helper** — no per-feature action taxonomy; helper detects fill vs select from locator syntax, click from `|` prefix
+4. **CSV drives everything** — Value column determines what runs per TC
+
+### Locator rules (for HUMAN-written codegen)
 
 - Prefer role-based selectors: `page.getByRole('button', { name: 'ค้นหา' })`
 - Never use auto-generated IDs (`#radix-*`, `#mat-*`, UUIDs)
+- Avoid `page.locator('span').first()` or similar brittle generic selectors — they flake on slow networks and cold starts. Replace with specific class/role selectors (`.ng-input`, `getByRole('combobox')`)
 - Avoid `exact: true` with Thai labels containing `/`, spaces, or special chars
 - Preserve Thai UI text exactly as it appears in the app
-
-**AI does not generate selectors** in this framework. Selectors come from dev's codegen in `_flows/` and `_locators/`. AI only transcribes.
 
 ### Verification
 
@@ -120,41 +130,33 @@ For Copilot/Cursor with native workspace access.
 
 ---
 
-## Section 4: Pattern Design Workflow
+## Section 4: Cases
 
-Three cases cover all changes to a feature:
+Three cases cover all changes:
 
 ### Case 1 — Update test cases
 
-**Signal:** Feature exists. Dev updated `_locators/` snippets or QA appended CSV rows. Need to regenerate test data.
+**Signal:** Feature exists. Dev updated `_locators/` array or QA updated CSV.
 
-**Action:** AI re-reads `_locators/` + CSV → regenerates helper's locator array + `data.ts`. Does NOT touch spec.ts, types.ts.
+**Action:** Regenerate `data.ts` from CSV. Regenerate helper's locator import if `_locators/` changed. Does NOT touch spec.ts, types.ts.
 
-**Files touched:** 2 (`helper.ts` locator array section + `data.ts`)
+**Prompt template:** `doc/prompts/case-1-update-tcs.md`
 
-**Prompt template:** See `AGENT_PROMPTS.md` → Case 1
+### Case 2 — Extend helper capability
 
-### Case 2 — Extend pattern (new action type)
+**Signal:** New locator type appears (e.g., datepicker widget helper can't dispatch), OR new action type needed (e.g., `|check` for checkbox).
 
-**Signal:** Dev added a new pattern in `_flows/` that helper's switch doesn't handle (e.g., `dragAndDrop`, `uploadFile`).
+**Action:** Add detection branch (for locator type) OR action case (for `|action`) to helper. Update this file's Section 9.
 
-**Action:** Add case to helper switch + variant to types.ts union + update this file's Section 9.
+**Prompt template:** `doc/prompts/case-2-extend-helper.md`
 
-**Files touched:** 2-3 (`helper.ts` + `types.ts` + optionally AGENTS.md)
+### Case 3 — New feature (bootstrap)
 
-**Prompt template:** See `AGENT_PROMPTS.md` → Case 2
+**Signal:** Feature doesn't exist.
 
-### Case 3 — New feature (bootstrap all 4 files)
+**Action:** Generate 4 files from `_flows/` + `_locators/` + `_scenarios/`.
 
-**Signal:** Feature doesn't exist yet.
-
-**Action:** Two phases in one prompt:
-- **Phase 1** — Generate `spec.ts`, `helper.ts`, `types.ts` from `_flows/`
-- **Phase 2** — Populate helper's locator array + `data.ts` from `_locators/` + CSV
-
-**Files touched:** 4 new files, requires 3 precondition files (`_flows/`, `_locators/`, `_scenarios/`)
-
-**Prompt template:** See `AGENT_PROMPTS.md` → Case 3
+**Prompt template:** `doc/prompts/case-3-bootstrap.md`
 
 ### Decision tree
 
@@ -165,123 +167,143 @@ Change needed
     │     │
     │     ├─► No  ─► Case 3 (bootstrap)
     │     │
-    │     └─► Yes ─► New action type in _flows/?
+    │     └─► Yes ─► New locator type or |action needed?
     │               │
     │               ├─► Yes ─► Case 2 (extend helper)
-    │               └─► No  ─► Case 1 (update TCs)
+    │               └─► No  ─► Case 1 (update data)
 ```
 
 ---
 
 ## Section 5: Codegen + Scenarios Workflow
 
-### `_flows/<feature>.ts` — full flow (dev-owned, gitignored)
+### `_flows/<feature>.ts` — flow template (dev-owned, gitignored)
 
-**Purpose:** Full sequence from login through all test-action patterns, used to generate spec.ts + helper.ts + types.ts.
+**Purpose:** Full skeleton of ONE typical TC. AI transcribes into spec.ts.
 
-**Structure — 2 sections separated by marker:**
+**Structure — 3 markers:**
 
 ```typescript
 // === SETUP ===
-// everything that happens BEFORE test actions:
-// login, navigation, clear filters, click search to populate table, etc.
-
-await page.goto('...');
+// runs in beforeEach — login, navigation, one-time preparation
+await page.goto('https://apps-uat.tokiomarinesafety.co.th/wfe/');
 await page.getByText('TMSTH Staff...').click();
-// ...
+await page.locator('.ng-input').click();
+await page.getByRole('option', { name: 'Hongqi' }).click();
+await page.getByRole('button', { name: 'เข้าสู่ระบบ' }).click();
+
+// === PER TEST ===
+// runs inside each test body
 await page.getByRole('button', { name: 'ล้างค่า' }).click();
 await page.getByRole('button', { name: 'ค้นหา' }).click();
-
-// === TEST ACTIONS ===
-// every pattern used by any TC:
-// simple click, download event, click-with-close, etc.
-
-// pattern: download
-const downloadPromise = page.waitForEvent('download');
-await page.getByRole('button', { name: 'Export Excel' }).click();
-const download = await downloadPromise;
-
-// pattern: click-with-close
-await page.getByRole('button', { name: 'ปริ้นท์ พ.ร.บ' }).first().click();
-await page.getByRole('button', { name: 'Close' }).click();
+// === DATA ===
+await page.getByRole('button', { name: 'ค้นหา' }).click();
 ```
 
 **Rules:**
-- MUST have `// === SETUP ===` and `// === TEST ACTIONS ===` markers
-- Everything above SETUP marker (or before it) → goes into `enter<Feature>Page` in spec.ts
-- Everything below TEST ACTIONS marker → analyzed for action patterns → becomes helper switch cases
-- Dev responsibility: `_flows/` must be **clean and comprehensive** — every pattern any TC uses must appear here
+- MUST have `// === SETUP ===` and `// === PER TEST ===` markers
+- PER TEST section MUST contain `// === DATA ===` (data insertion point)
+- Everything above `// === DATA ===` in PER TEST = pre-data steps
+- Everything below `// === DATA ===` in PER TEST = post-data steps
+- Dev responsibility: `_flows/` must be **clean and complete** — represents what every TC does
 
-### `_locators/<feature>.ts` — per-TC snippets (dev-owned, gitignored)
+**Print case (pure action, no pre/post steps):**
+```typescript
+// === SETUP ===
+// login sequence
 
-**Purpose:** One snippet per TC, ordered to match CSV rows.
+// === PER TEST ===
+// === DATA ===
+```
+Only marker + data — snippet in `_locators/` handles everything.
 
-**Structure — 1 comment marker + 1 snippet per TC:**
+### `_locators/<feature>.ts` — locator array (dev-owned, gitignored)
+
+**Purpose:** Ordered array of Playwright locator functions. Index = position in CSV Value.
+
+**Structure:**
 
 ```typescript
-// TC001 - Export Excel
-await page.getByRole('button', { name: 'Export Excel' }).click();
+import type { Page, Locator } from '@playwright/test';
 
-// TC002 - Print Compulsory
-await page.getByRole('button', { name: 'ปริ้นท์ พ.ร.บ' }).first().click();
-
-// TC003 - Print Job Sheet
-await page.getByRole('button', { name: 'ใบแจ้งงาน' }).first().click();
+export const searchLocators: Array<(page: Page) => Locator> = [
+  (page) => page.getByRole('textbox').first(),
+  (page) => page.getByRole('textbox').nth(1),
+  (page) => page.getByRole('textbox', { name: 'DD/MM/YYYY' }).first(),
+  (page) => page.getByRole('button', { name: 'Next' }),
+  (page) => page.getByRole('combobox').nth(1),
+  // ...
+];
 ```
 
 **Rules:**
-- 1 snippet per TC, separated by `// TC<ID> - <name>` comments
-- Snippet = the ATOMIC interaction only (a single click / fill / select) — NOT the full pattern
-  - Pattern wrappers (download event, close dialog) come from `_flows/` and live in helper
-- Order MUST match CSV row order
-- Snippet count MUST match CSV row count
-- TC-ID comments are audit trail for humans (AI parses them as a safety check)
+- Export as `<feature>Locators` (camelCase feature name + `Locators`)
+- Type: `Array<(page: Page) => Locator>`
+- Order matters — index N in this array maps to item N in CSV Value
+- **NO comments describing what each locator is** — semantics live in `_scenarios/<feature>.csv` Scenario column, NOT here
+- Cover ALL fields/buttons that any TC in the CSV references
+- Use role-based selectors (see Section 2)
 
-**Preparation shortcut:** Dev copies test-action lines from `_flows/`, strips pattern wrappers, adds TC-ID comments. Reuse 1 codegen session.
+**Why no comments:**
+- Comments invite AI to reason about field semantics → hallucination surface
+- Framework principle: order = source of truth, no name matching
+- If human needs to audit, cross-reference with CSV Scenario name and locator position
+
+**Preparation:** Dev copies locator lines from `_flows/` codegen, arranges in the order that CSV Value expects.
 
 ### `_scenarios/<feature>.csv` — test scenarios (QA-owned, committed)
 
 **Format — 5 columns:**
 
 ```csv
-TC-ID,Module,Feature,Scenario,Action
-TC001,Dashboard,Print,Export Excel,download
-TC002,Dashboard,Print,Print Compulsory,clickWithClose
-TC003,Dashboard,Print,Print Job Sheet,clickWithClose
+TC-ID,Module,Feature,Scenario,Value
+TC001,Dashboard,Search,Search by Receipt,"HQ0000020"
+TC005,Dashboard,Search,Search by Status,",,,,,,งานใหม่"
+TC010,Dashboard,Search,Multi filter,"HQ0000020,Harry"
+TC020,Dashboard,Wizard,Multi step,"A,B,C,|click,D,E,F"
+TC030,Dashboard,Print,Print Job Sheet,"|click"
 ```
 
 **Columns:**
 - `TC-ID` — test case identifier
 - `Module` / `Feature` — context (redundant with folder path but useful for QA)
 - `Scenario` — human-readable name
-- `Action` — single action type name matching a case in helper's switch (see Section 9)
+- `Value` — comma-separated items, `|` prefix = action
 
-**Rules:**
-- 1 row per TC — no multi-line scenarios
-- Row order MUST match `_locators/` snippet order
-- Row count MUST match `_locators/` snippet count
-- `Action` value MUST be a case name in helper's switch (Section 9)
+**Value format rules — see Section 9 for full vocabulary:**
+- Comma `,` separates items
+- Empty item (`,,`) = skip that locator
+- Plain text = text to fill/select at that locator
+- `|<action>` prefix = action (e.g., `|click`) at that locator
+- Wrap whole cell in double quotes to preserve commas
+- Do NOT use commas inside a single value — reserved as delimiter
 
 ### Workflow
 
-1. Dev codegen `_flows/<feature>.ts` — add SETUP / TEST ACTIONS markers
-2. Dev prepare `_locators/<feature>.ts` — copy atomic interactions with TC-ID markers
-3. QA prepare `_scenarios/<feature>.csv` — matching row count + order
-4. Run Case 3 → AI generates 4 files
+1. Dev codegen once → get raw script
+2. Dev edit `_flows/<feature>.ts`:
+   - Split into SETUP + PER TEST sections
+   - Add `// === DATA ===` marker where TC-specific input goes
+3. Dev extract locators → `_locators/<feature>.ts`:
+   - Every field/button the CSV will reference, in order
+4. QA prepare `_scenarios/<feature>.csv`:
+   - 1 row per TC, Value uses `|` for actions
+5. Run Case 3 → AI generates 4 files
 
 ---
 
 ## Section 6: Adding a New Feature Workflow
 
-1. **Codegen** `_flows/<feature>.ts` with SETUP / TEST ACTIONS markers
-2. **Prepare** `_locators/<feature>.ts` (1 snippet per TC, matches CSV order)
-3. **QA writes** `_scenarios/<feature>.csv`
-4. **Choose structure** (flat vs nested)
-5. **Run Case 3 prompt**
-6. AI generates 4 files
-7. Review + run tests
-8. Regenerate JSON cache — `analyze-project.bat`
-9. Add more TCs later via Case 1 (append CSV rows + `_locators/` snippets)
+1. **Codegen** raw script from Playwright codegen
+2. **Prepare `_flows/<feature>.ts`** with SETUP / PER TEST / `// === DATA ===` markers
+3. **Prepare `_locators/<feature>.ts`** — export array of locator functions, ordered
+4. **QA writes `_scenarios/<feature>.csv`** — 1 row per TC
+5. **Choose structure** (flat vs nested)
+6. **Run Case 3 prompt**
+7. AI generates 4 files
+8. Review + run tests
+9. Regenerate JSON cache — `analyze-project.bat`
+10. Add more TCs later via Case 1 (append CSV rows only — `_locators/` already covers fields)
 
 ---
 
@@ -292,10 +314,6 @@ TC003,Dashboard,Print,Print Job Sheet,clickWithClose
 - Pattern used across 3+ specs → extract to `_shared/verify-helpers.ts`
 - Pattern used in 1-2 specs → inline in spec
 
-### When to create new AGENTS.md (nested)
-
-- **Never** — framework is universal by design
-
 ### When to extract to `_shared/`
 
 - Function used across 3+ specs → extract
@@ -303,8 +321,13 @@ TC003,Dashboard,Print,Print Job Sheet,clickWithClose
 
 ### When to split a feature into two
 
-- `_flows/` has two paths with different success criteria → split
-- CSV rows have scenarios that can't share the same `defaultVerify` → split
+- `_flows/` PER TEST section has two disjoint patterns (different pre/post steps) → split
+- CSV rows can't share the same locator array meaningfully → split
+
+### When to add new locator type or action
+
+- Codegen produced locator helper can't dispatch (e.g., datepicker widget) → Case 2 (add detection branch)
+- New action needed beyond `|click` (e.g., `|check` for checkbox) → Case 2 (add action case)
 
 ---
 
@@ -312,147 +335,25 @@ TC003,Dashboard,Print,Print Job Sheet,clickWithClose
 
 ### Design principle
 
-**Phase 1 (spec + helper + types) is generated from `_flows/`.**  
-**Phase 2 (data.ts + helper locator array) is generated from `_locators/` + `_scenarios/`.**
+**Helper is universal.** No per-feature action taxonomy. Helper dispatches based on:
+1. Item content — starts with `|` → action, else → text
+2. Locator syntax (for text items) — textbox → fill, combobox → click + select
 
-AI does not match scenario names against codegen labels — order is the single source of truth. This eliminates hallucination surface.
+Types file is minimal. Data.ts is flat.
 
 ### `<feature>.types.ts` — data shape
 
-**Structure:**
-
 ```typescript
-// Action type: one string literal per case in helper's switch
-export type <Feature>Action = 'click' | 'download' | 'clickWithClose' | ...;
-
-// Test case: references locator by index, action by name
 export interface <Feature>TestCase {
   testCaseId: string;
   scenario: string;
-  action: <Feature>Action;
-  locatorIndex: number;
+  values: string[];
 }
 ```
 
-Action names come from patterns AI identifies in `_flows/` TEST ACTIONS section (see Section 9).
-
-### `<feature>.helper.ts` — action application + locator array
-
-**Structure:**
-
-```typescript
-import { Page } from '@playwright/test';
-import type { <Feature>Action, <Feature>TestCase } from './<feature>.types';
-
-// Phase 2: populated from _locators/<feature>.ts
-const locators: Array<(page: Page) => Promise<void>> = [
-  async (page) => {
-    // TC001 snippet
-  },
-  async (page) => {
-    // TC002 snippet
-  },
-  // ...
-];
-
-// Phase 1: patterns from _flows/ TEST ACTIONS
-async function applyAction(
-  page: Page,
-  action: <Feature>Action,
-  locatorIndex: number
-): Promise<void> {
-  const locator = locators[locatorIndex];
-  if (!locator) {
-    throw new Error(`No locator at index ${locatorIndex}`);
-  }
-
-  switch (action) {
-    case 'click': {
-      await locator(page);
-      break;
-    }
-    case 'download': {
-      const downloadPromise = page.waitForEvent('download');
-      await locator(page);
-      await downloadPromise;
-      break;
-    }
-    case 'clickWithClose': {
-      await locator(page);
-      await page.getByRole('button', { name: 'Close' }).click();
-      break;
-    }
-    default: {
-      const _: never = action;
-      throw new Error(`Unknown action: ${_}`);
-    }
-  }
-}
-
-export async function apply<Feature>Action(
-  page: Page,
-  testData: <Feature>TestCase
-): Promise<void> {
-  await applyAction(page, testData.action, testData.locatorIndex);
-}
-```
-
-**Rules:**
-- `locators` array populated Phase 2 (order matches CSV)
-- `applyAction` switch cases come from Phase 1 (`_flows/` TEST ACTIONS)
-- Every case must:
-  1. Fetch locator by index
-  2. Execute pattern (wrap locator call with any needed setup/teardown)
-- `never`-type default case mandatory
-
-### `<feature>.spec.ts` — orchestration
-
-**Structure:**
-
-```typescript
-import { test, Page } from '@playwright/test';
-import { <feature>TestCases } from './<feature>.data';
-import { apply<Feature>Action } from './<feature>.helper';
-
-const APPLICATION_URL = '...';
-
-async function waitForLoading(page: Page): Promise<void> {
-  // if flows uses it
-}
-
-// Setup helper derived from _flows/ SETUP section (top-to-bottom transcription)
-async function enter<Feature>Page(page: Page): Promise<void> {
-  await page.goto(APPLICATION_URL);
-  // ... every step from _flows/ SETUP section
-}
-
-// Feature-level default verify (from user in Case 3 prompt)
-async function defaultVerify(page: Page): Promise<void> {
-  // e.g. no error dialog + URL matches
-}
-
-test.describe('<Feature Name>', () => {
-  test.beforeEach(async ({ page }) => {
-    await enter<Feature>Page(page);
-  });
-
-  for (const testData of <feature>TestCases) {
-    test(`${testData.testCaseId} - ${testData.scenario}`, async ({ page }) => {
-      await apply<Feature>Action(page, testData);
-      await defaultVerify(page);
-    });
-  }
-});
-```
-
-**Rules:**
-- `enter<Feature>Page` = LITERAL transcription of `_flows/` SETUP section (with `waitForLoading` inserted where flow shows loading states)
-- `defaultVerify` = feature-level check, user specifies content in Case 3 prompt
-- Test loop is universal boilerplate
+**That's it.** No Action union, no discriminated types. `values` is a flat string array (parsed from CSV).
 
 ### `<feature>.data.ts` — test cases
-
-**Structure:**
 
 ```typescript
 import type { <Feature>TestCase } from './<feature>.types';
@@ -460,82 +361,249 @@ import type { <Feature>TestCase } from './<feature>.types';
 export const <feature>TestCases: <Feature>TestCase[] = [
   {
     testCaseId: 'TC001',
-    scenario: 'Export Excel',
-    action: 'download',
-    locatorIndex: 0,
+    scenario: 'Search by Receipt Number',
+    values: ['HQ0000020'],
   },
   {
-    testCaseId: 'TC002',
-    scenario: 'Print Compulsory',
-    action: 'clickWithClose',
-    locatorIndex: 1,
+    testCaseId: 'TC010',
+    scenario: 'Multi filter',
+    values: ['HQ0000020', 'Harry'],
   },
-  // ...
+  {
+    testCaseId: 'TC020',
+    scenario: 'Multi step wizard',
+    values: ['A', 'B', 'C', '|click', 'D', 'E', 'F'],
+  },
 ];
 ```
 
 **Rules:**
-- Populated from CSV rows
-- `locatorIndex` = CSV row position (0-based)
-- Length = CSV row count = `_locators/` snippet count
+- One object per CSV row
+- `values` = CSV Value column split by `,` (preserving `|` prefix on action items)
+- Empty items become `''` in the array (spec skips them)
+
+### `<feature>.helper.ts` — universal dispatcher
+
+```typescript
+import { Page } from '@playwright/test';
+import type { <Feature>TestCase } from './<feature>.types';
+import { <feature>Locators } from '../../_locators/<feature>';
+
+async function applyItem(
+  page: Page,
+  index: number,
+  item: string
+): Promise<void> {
+  const locatorFn = <feature>Locators[index];
+  if (!locatorFn) {
+    throw new Error(`No locator at index ${index}`);
+  }
+  
+  const target = locatorFn(page);
+  
+  // Action marker: |click, |check, ...
+  if (item.startsWith('|')) {
+    const action = item.slice(1);
+    switch (action) {
+      case 'click':
+        await target.click();
+        return;
+      default:
+        throw new Error(`Unknown action: |${action}`);
+    }
+  }
+  
+  // Text value: dispatch by locator type
+  const locatorCode = locatorFn.toString();
+  
+  if (locatorCode.includes("getByRole('textbox'") || 
+      locatorCode.includes('getByRole("textbox"')) {
+    await target.fill(item);
+  } else if (locatorCode.includes("getByRole('combobox'") ||
+             locatorCode.includes('ng-select')) {
+    await target.click();
+    await page.getByRole('option', { name: item }).click();
+  } else {
+    throw new Error(
+      `Cannot dispatch text value at index ${index} — ` +
+      `unknown locator type. Locator: ${locatorCode}`
+    );
+  }
+}
+
+export async function apply<Feature>Inputs(
+  page: Page,
+  testData: <Feature>TestCase
+): Promise<void> {
+  const bound = Math.min(testData.values.length, <feature>Locators.length);
+  for (let i = 0; i < bound; i++) {
+    const item = testData.values[i];
+    if (item === '') continue;
+    await applyItem(page, i, item);
+  }
+}
+```
+
+**Rules:**
+- Import `<feature>Locators` from `_locators/<feature>` (relative path)
+- `applyItem` handles single index → dispatches by content type + locator type
+- `apply<Feature>Inputs` loops with `Math.min(values, locators)` bound
+- Skip empty items
+- Throw explicit errors for unknown actions or locator types
+
+### `<feature>.spec.ts` — orchestration
+
+```typescript
+import { test, Page, expect } from '@playwright/test';
+import { <feature>TestCases } from './<feature>.data';
+import { apply<Feature>Inputs } from './<feature>.helper';
+
+const APPLICATION_URL = '...';
+
+async function enter<Feature>Page(page: Page): Promise<void> {
+  // LITERAL transcription of _flows/ SETUP section
+  await page.goto(APPLICATION_URL);
+  // ...
+}
+
+async function defaultVerify(page: Page): Promise<void> {
+  // From Case 3 prompt — feature-level success check
+}
+
+test.describe('<Feature Name>', () => {
+  test.beforeEach(async ({ page }) => {
+    await enter<Feature>Page(page);
+  });
+  
+  for (const testData of <feature>TestCases) {
+    test(`${testData.testCaseId} - ${testData.scenario}`, async ({ page }) => {
+      // PER TEST — before DATA (transcribed from _flows/)
+      // e.g. clear filters, initial search
+      
+      // === DATA ===
+      await apply<Feature>Inputs(page, testData);
+      
+      // PER TEST — after DATA (transcribed from _flows/)
+      // e.g. click Search button
+      
+      await defaultVerify(page);
+    });
+  }
+});
+```
+
+**Rules:**
+- `enter<Feature>Page` = literal transcription of `_flows/` SETUP section
+- Pre-data steps (above `// === DATA ===`) go directly in test body
+- `// === DATA ===` → replaced with `await apply<Feature>Inputs(page, testData)`
+- Post-data steps (below `// === DATA ===`) go directly in test body
+- `defaultVerify` at end of every test
 
 ### How the 4 files connect
 
 ```
-_flows/<feature>.ts (SETUP)       ──►   spec.ts (enter<Feature>Page)
-_flows/<feature>.ts (TEST ACTIONS)──►   helper.ts (switch cases) + types.ts (action union)
-_locators/<feature>.ts             ──►   helper.ts (locators array)
-_scenarios/<feature>.csv           ──►   data.ts (TC array)
+_flows/<feature>.ts      ──►  spec.ts (enterPage + test body transcription)
+_locators/<feature>.ts   ──►  helper.ts (import as array)
+_scenarios/<feature>.csv ──►  data.ts (parse Value → values array)
 ```
 
-`_flows/`, `_locators/`, `_scenarios/` are NOT imported at runtime — AI reads them at generation time.
+`_flows/`, `_locators/`, `_scenarios/` are read at **generation time** by AI.  
+`_locators/` is also **imported at runtime** by helper.ts (only file that's runtime-linked).
 
 ---
 
-## Section 9: Action Vocabulary
+## Section 9: Value + Locator Vocabulary
 
-Actions are patterns AI identifies in `_flows/` TEST ACTIONS section. Each pattern → one case in helper switch → one string literal in types union.
+### Value item types (in CSV Value column)
 
-### Canonical patterns
+CSV Value = comma-separated items. Each item at position N maps to `<feature>Locators[N]`.
 
-| Pattern | `_flows/` signature | Helper case |
+| Item | Type | Meaning |
 |---|---|---|
-| **click** | Single `.click()` line | Call locator(page) |
-| **download** | `waitForEvent('download')` + click + await | Wrap locator with download promise |
-| **clickWithClose** | Click + immediate close button click | Locator then click Close button |
-| **fillAndSubmit** | Fill + click submit | Locator + submit button |
-| **selectFromDropdown** | Open dropdown + click option | Locator opens dropdown, args select option |
-| **dragAndDrop** | Two locators + drag | Not yet supported — Case 2 to add |
+| `""` (empty) | Skip | Do nothing at this locator |
+| `HQ0000020` | Text | Text to fill/select at this locator |
+| `งานใหม่` | Text | Text to fill/select (unicode ok) |
+| `\|click` | Action | Click at this locator (button/link) |
+| `\|check` | Action | Check checkbox (Case 2 to enable) |
+| `\|toggle` | Action | Toggle switch (Case 2 to enable) |
 
-### Naming rules
+**Rule:** Item starting with `|` is always an action. Everything else is text.
 
-- Action name = camelCase, describes what the pattern DOES
-- No target names in the action (targets come from locator index)
-- Frozen list — new pattern requires Case 2
+### How helper dispatches text items
 
-### Extending the vocabulary
+Helper reads locator function's source code and matches patterns:
 
-If `_flows/` has a pattern not in the list:
-1. Case 3 STOPS and reports "New pattern in _flows/: <description>"
-2. User runs Case 2 to add pattern → helper switch case + types union + this section
-3. Case 3 re-runs
+| Locator pattern | Action taken |
+|---|---|
+| `getByRole('textbox', ...)` | `.fill(text)` |
+| `getByRole('combobox', ...)` | `.click()` + click option with `name: text` |
+| `locator('ng-select')...getByRole('combobox')` | `.click()` + click option with `name: text` |
 
-**AI never invents pattern names.** New pattern = Case 2 explicitly.
+**Unknown pattern** → helper throws error → Case 2 needed to extend detection
 
-### Feature-level default verify
+### How helper dispatches actions
 
-Each feature has `defaultVerify(page)` in spec.ts, running at end of every test. Content is provided by user in Case 3 prompt.
+Helper strips `|` prefix and matches action name:
 
-Examples:
-- **Print:** no error dialog + still on `/dashboard`
-- **Search:** no error + result count > 0
-- **Export:** download completed
+| Action | Implementation |
+|---|---|
+| `click` | `target.click()` |
+| Others | Not yet supported — Case 2 to add |
+
+### Extending vocabulary (Case 2)
+
+**New locator type** (e.g., datepicker with special widget):
+1. Add detection branch in helper's text dispatch
+2. Update this section's "How helper dispatches text items" table
+
+**New action** (e.g., `|check` for checkbox):
+1. Add case in helper's action switch
+2. Update this section's "Value item types" table
+3. Update "How helper dispatches actions" table
+
+### CSV Value examples
+
+**Single field fill:**
+```csv
+TC001,...,"HQ0000020"
+```
+→ `values: ['HQ0000020']` → fill locator[0] with "HQ0000020"
+
+**Multi field fill (consecutive):**
+```csv
+TC010,...,"HQ0000020,Harry"
+```
+→ `values: ['HQ0000020', 'Harry']` → fill [0] with "HQ0000020", fill [1] with "Harry"
+
+**Non-consecutive fields (skip middle):**
+```csv
+TC011,...,",,,,,,,,,DEALER001,CHASSIS001"
+```
+→ `values: ['','','','','','','','','','DEALER001','CHASSIS001']` → skip [0-8], fill [9] with "DEALER001", fill [10] with "CHASSIS001"
+
+**Wizard (fill → click → fill):**
+```csv
+TC020,...,"A,B,C,|click,D,E,F"
+```
+→ `values: ['A','B','C','|click','D','E','F']` → fill [0-2], click [3] (button), fill [4-6]
+
+**Pure action (Print button):**
+```csv
+TC001,...,"|click"
+```
+→ `values: ['|click']` → click locator[0] (button)
+
+**Text value that happens to be "click":**
+```csv
+TC050,...,"click"
+```
+→ `values: ['click']` → helper checks: no `|` prefix → text → fill locator[0] with "click" (safe because textbox locator)
 
 ---
 
 ## Contribution notes
 
-- Update this file when new pattern emerges (Case 2 flow)
+- Update this file when new locator type or action is added (Case 2 flow)
 - Keep sections concise
 - Preserve Thai UI labels exactly
 - After adding/removing feature, run `analyze-project.bat`
@@ -544,8 +612,9 @@ Examples:
 
 ## Changelog
 
-- 2026-09-20 (v6) — Snippet-based model. `_locators/` = 1 snippet per TC (order-matched to CSV). Phase 1 (spec/helper/types) from `_flows/`. Phase 2 (data + locator array) from `_locators/` + CSV. Zero hallucination surface (AI never generates selectors). Section 9 rewritten: Action patterns replace verb-based steps.
-- 2026-09-20 (v5.1) — Added "test-ready state" definition, no-translate + no-OR-regex rules.
+- 2026-09-20 (v7.1) — `_locators/` MUST have NO comments (was: comments encouraged). Prevents AI from re-interpreting field semantics. Framework doubles down on "order = source of truth". Prompt scope guardrails added: `_locators/` and `_flows/` are read-only in all cases.
+- 2026-09-20 (v7) — Value-based universal model. Helper dispatches by content (`|` prefix = action) + locator type (textbox/combobox). No per-feature action taxonomy. Types minimal (just values array). CSV Value with `|<action>` markers. `_locators/` = flat array (index-based). `_flows/` markers: SETUP + PER TEST + `// === DATA ===`. Print unified with Search under same model.
+- 2026-09-20 (v6) — Snippet-based model. `_locators/` = 1 snippet per TC (order-matched to CSV). Phase 1 (spec/helper/types) from `_flows/`. Phase 2 (data + locator array) from `_locators/` + CSV. Action taxonomy in Section 9.
 - 2026-09-20 (v5) — Pattern archetypes, step-based union, `_scenarios/` CSV convention.
 - 2026-09-19 (v4) — `_flows/`, Section 8 (4-file pattern abstract).
 - 2026-09-XX (v3) — Universal framework baseline.

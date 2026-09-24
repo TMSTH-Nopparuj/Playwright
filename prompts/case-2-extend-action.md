@@ -1,4 +1,4 @@
-# Case 2 — Extend Action Pattern (Rules)
+# Case 2 — Extend Helper Capability (Rules)
 
 Rules file for AI. Do NOT paste this file's content as prompt — user pastes minimal invocation (see `AGENT_PROMPTS.md`).
 
@@ -7,9 +7,9 @@ Rules file for AI. Do NOT paste this file's content as prompt — user pastes mi
 ## What the user paste looks like
 
 ```markdown
-### Case 2 — Extend action pattern
+### Case 2 — Extend helper capability
 
-Read: #file:doc/prompts/case-2-extend-action.md
+Read: #file:doc/prompts/case-2-extend-helper.md
 
 **Location**
 - Project: <project>
@@ -17,19 +17,40 @@ Read: #file:doc/prompts/case-2-extend-action.md
 - Module: <module>
 - Feature: <feature>
 
-**New pattern**
-- Name: <camelCase name>
+**Extension**
+- Type: locator | action
+- Name: <descriptive name>
 - Description: <one line>
-- Playwright API: <API to call>
+- Playwright API: <API call>
 ```
 
-AI extracts Location + New pattern from user prompt.
+AI extracts Location + Extension from user prompt.
 
 ---
 
 ## When to use
 
-Feature exists. Dev added a new interaction pattern in `_flows/<feature>.ts` TEST ACTIONS that helper's switch doesn't handle (e.g., `dragAndDrop`, `uploadFile`, `hoverAndClick`).
+Feature exists. Helper can't dispatch something:
+
+**Type = `locator`:** New locator syntax that helper doesn't recognize.
+- Example: datepicker widget with custom `page.locator('.date-picker-input')` — helper doesn't match textbox or combobox
+- Case 1 would fail with `"Cannot dispatch text value at index N — unknown locator type"`
+
+**Type = `action`:** New `|<action>` marker beyond `|click`.
+- Example: `|check` for checkboxes, `|toggle` for switches
+- Case 1 would fail with `"Unknown action: |<action>"`
+
+---
+
+## Scope
+
+- Modify `helper.ts` + `types.ts` + `AGENTS.md` (Section 9) only.
+- `_flows/`, `_locators/`, `_scenarios/`, `spec.ts`, `data.ts` are READ-ONLY — DO NOT modify (`_locators/` and `_scenarios/` are only bootstrapped by Case 4)
+- DO NOT add, remove, or rewrite comments in `_locators/`
+- DO NOT run tests (`npx playwright test`, `pnpm test`, etc.)
+- DO NOT execute terminal commands beyond file modification
+- DO NOT launch browser, dev server, or Playwright inspector
+- User will review and test manually after extension
 
 ---
 
@@ -41,61 +62,84 @@ Execute in this order.
 
 1. Verify feature folder exists at `Test-Local/<project>/<access-flow>/<module>/<feature>/`. If missing → **STOP** and report "Case 3 required".
 
-2. Read `<feature>.types.ts`:
-   - Get current Action union values
-   - If `<pattern-name>` already in union → **STOP** and report "Pattern already exists".
+2. Verify `<feature>.helper.ts` exists.
 
-3. Read `_flows/<feature>.ts`:
-   - Confirm the new pattern is visible in TEST ACTIONS section
-   - Use as reference for step 5
+3. Read the Extension block from user prompt:
+   - `Type` must be `locator` or `action`
+   - `Name` — short descriptive identifier
+   - `Description` — one line explaining the case
+   - `Playwright API` — code to execute for this case
 
-### Extension
+### Read files
 
-4. Update `<feature>.types.ts`:
-   - Add `'<pattern-name>'` to the Action union
-   
-   Example:
-   ```typescript
-   // Before
-   export type <Feature>Action = 'click' | 'download';
-   
-   // After
-   export type <Feature>Action = 'click' | 'download' | '<pattern-name>';
-   ```
+4. Read `AGENTS.md` Section 9 (Value + Locator Vocabulary).
 
-5. Update `<feature>.helper.ts`:
-   - Add new case to `applyAction` switch, ABOVE the `default` case
-   - Case body:
-     - Fetch locator via `await locator(page)`
-     - Transcribe the Playwright API from user's New pattern block
-     - Use exact same wrappers/waits as `_flows/` shows
-   
-   Example structure:
-   ```typescript
-   case '<pattern-name>': {
-     await locator(page);
-     // ... additional API calls per user's Playwright API
-     break;
-   }
-   ```
+5. Read `<feature>.helper.ts` and identify:
+   - `applyItem` function
+   - Text dispatch section (locator syntax checks)
+   - Action dispatch section (`switch` on action name)
 
-6. Update `AGENTS.md` Section 9 canonical patterns table:
-   - Add new row with pattern name, description, transcribed API
-   
+### Extend helper
+
+**If Type = action:**
+
+6a. Verify the action name (from user's Name) is NOT already in helper's action switch. If already there → **STOP** and report.
+
+7a. Add a new case to the action switch, ABOVE the `default` case:
+    
+    ```typescript
+    case '<name>':
+      // Transcribe user's Playwright API
+      // Use `target` (already fetched via locatorFn(page))
+      return;
+    ```
+    
+    Example for `|check`:
+    ```typescript
+    case 'check':
+      await target.check();
+      return;
+    ```
+
+**If Type = locator:**
+
+6b. Verify the locator pattern (from user's Description) is NOT already handled. Look at the text dispatch section's `if/else if` chain. If already there → **STOP** and report.
+
+7b. Add a new `else if` branch to text dispatch, BEFORE the final `else` (error case):
+    
+    ```typescript
+    } else if (locatorCode.includes("<pattern>")) {
+      // Transcribe user's Playwright API using `target` and `item`
+    }
+    ```
+    
+    Example for datepicker:
+    ```typescript
+    } else if (locatorCode.includes("date-picker-input")) {
+      await target.click();
+      await page.getByRole('gridcell', { name: item }).click();
+    }
+    ```
+
+### Update AGENTS.md
+
+8. Add row to `AGENTS.md` Section 9 table:
+   - For action: "Value item types" table + "How helper dispatches actions" table
+   - For locator: "How helper dispatches text items" table
+
    If AGENTS.md not writable → skip and note in output.
 
-7. Do NOT touch: `spec.ts`, `data.ts`, `_locators/*`, `_flows/*`, other features.
+9. Do NOT touch: `spec.ts`, `data.ts`, `types.ts`, `_locators/*`, `_flows/*`, other features.
 
 ---
 
 ## Output
 
-- Modified `<feature>.types.ts` (Action union extended)
-- Modified `<feature>.helper.ts` (switch case added)
-- Modified `AGENTS.md` Section 9 (pattern documented)
+- Modified `<feature>.helper.ts`
+- Modified `AGENTS.md` Section 9 (if writable)
 - Report:
-  - "Pattern '<pattern-name>' added"
-  - "Next: use Case 1 to add TCs with Action='<pattern-name>'"
+  - "Extension added: <Type> '<Name>'"
+  - "Next: use Case 1 to regenerate data.ts with new capability"
 
 ---
 
@@ -104,27 +148,106 @@ Execute in this order.
 | Signal | Report |
 |---|---|
 | Feature folder missing | `"Case 3 required — feature does not exist"` |
-| Pattern already in union | `"Pattern '<name>' already handled"` |
+| Extension type invalid | `"Type must be 'locator' or 'action'"` |
+| Action already handled | `"Action '\|<name>' already in helper switch"` |
+| Locator pattern already handled | `"Pattern '<pattern>' already in helper text dispatch"` |
 | Playwright API unclear | `"Cannot infer implementation — clarify Playwright API"` |
-| Pattern not in `_flows/` | `"Warning: <name> not found in _flows/ — add there first"` |
+
+---
+
+## Example — Add `|check` action
+
+**User prompt:**
+```markdown
+### Case 2 — Extend helper capability
+
+Read: #file:doc/prompts/case-2-extend-helper.md
+
+**Location**
+- Project: WEF
+- AccessFlow: Microsoft-Login
+- Module: dashboard
+- Feature: search
+
+**Extension**
+- Type: action
+- Name: check
+- Description: Check a checkbox
+- Playwright API: target.check()
+```
+
+**AI adds to helper:**
+```typescript
+if (item.startsWith('|')) {
+  const action = item.slice(1);
+  switch (action) {
+    case 'click':
+      await target.click();
+      return;
+    case 'check':                    // ← NEW
+      await target.check();
+      return;
+    default:
+      throw new Error(`Unknown action: |${action}`);
+  }
+}
+```
+
+**Now CSV can use:** `"|check"` for checkbox locators.
+
+---
+
+## Example — Add datepicker locator type
+
+**User prompt:**
+```markdown
+### Case 2 — Extend helper capability
+
+Read: #file:doc/prompts/case-2-extend-helper.md
+
+**Location**
+- Project: WEF
+- AccessFlow: Microsoft-Login
+- Module: dashboard
+- Feature: search
+
+**Extension**
+- Type: locator
+- Name: datepicker
+- Description: Click datepicker input, click day gridcell
+- Playwright API: target.click() then page.getByRole('gridcell', { name: item }).click()
+```
+
+**AI adds to helper text dispatch:**
+```typescript
+if (locatorCode.includes("getByRole('textbox'")) {
+  await target.fill(item);
+} else if (locatorCode.includes("getByRole('combobox'") || 
+           locatorCode.includes('ng-select')) {
+  await target.click();
+  await page.getByRole('option', { name: item }).click();
+} else if (locatorCode.includes("date-picker-input")) {    // ← NEW
+  await target.click();
+  await page.getByRole('gridcell', { name: item }).click();
+} else {
+  throw new Error(/* ... */);
+}
+```
+
+**Now `_locators/` can include:**
+```typescript
+(page) => page.locator('.date-picker-input').first(),
+```
+
+And CSV Value like `"15"` at that position → helper clicks datepicker + clicks day 15.
 
 ---
 
 ## Why Case 2 doesn't add test cases
 
-Case 2 extends the pattern. Test cases come via Case 1 (with new action already in union).
+Case 2 extends helper capability. Adding TCs comes via Case 1 (which now can parse the new `|<action>` or leverage the new locator type).
 
 Split ensures:
-- Pattern change reviewed independently
+- Helper extension reviewed independently
 - Test case additions batched with QA's CSV updates
-- No mixing of infrastructure + data changes
-
----
-
-## Note on AGENTS.md updates
-
-If AI cannot modify `AGENTS.md`:
-- Still complete steps 4-5 (types + helper)
-- Report: "AGENTS.md Section 9 needs manual update — add row for <pattern-name>"
-
-Do not block on AGENTS.md update.
+- No mixing of framework change + data change

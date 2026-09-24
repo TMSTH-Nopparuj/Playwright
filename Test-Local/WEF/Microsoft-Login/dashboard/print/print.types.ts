@@ -1,11 +1,5 @@
-export type DashboardPrintAction =
-  | 'click'
-  | 'download'
-  | 'clickWithClose';
-
-export interface DashboardPrintTestCase {
+export interface PrintTestCase {
   testCaseId: string;
   scenario: string;
-  action: DashboardPrintAction;
-  locatorIndex: number;
+  values: string[];
 }

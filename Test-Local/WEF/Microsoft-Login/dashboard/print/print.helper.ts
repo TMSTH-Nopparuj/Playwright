@@ -1,96 +1,68 @@
-import { expect, Page } from '@playwright/test';
+import { Page } from '@playwright/test';
 
-import type {
-  DashboardPrintAction,
-  DashboardPrintTestCase,
-} from './print.types';
+import type { PrintTestCase } from './print.types';
+import { printLocators } from '../_locators/print';
 
-const locators: Array<(page: Page) => Promise<void>> = [
-  async (page: Page): Promise<void> => {
-    await page
-      .getByRole('button', {
-        name: 'ปริ้นท์ พ.ร.บ',
-      })
-      .first()
-      .click();
-  },
-  async (page: Page): Promise<void> => {
-    const downloadPromise = page.waitForEvent('download');
-    await page
-      .getByRole('button', {
-        name: ' Export Excel',
-      })
-      .click();
-    await downloadPromise;
-  },
-  async (page: Page): Promise<void> => {
-    await page
-      .getByRole('button', {
-        name: 'ปริ้นท์ พ.ร.บ',
-      })
-      .first()
-      .click();
-
-    const closeButton = page.getByRole('button', {
-      name: 'Close',
-      exact: true,
-    });
-
-    await expect(closeButton).toBeVisible({
-      timeout: 10_000,
-    });
-
-    await closeButton.click();
-  },
-];
-
-async function applyAction(
+async function applyItem(
   page: Page,
-  action: DashboardPrintAction,
-  locatorIndex: number
+  index: number,
+  item: string
 ): Promise<void> {
-  const locator = locators[locatorIndex];
+  const locatorFn = printLocators[index];
 
-  if (!locator) {
-    throw new Error(
-      `No locator configured for index ${locatorIndex}`
-    );
+  if (!locatorFn) {
+    throw new Error(`No locator at index ${index}`);
   }
 
-  switch (action) {
-    case 'click': {
-      await locator(page);
-      break;
-    }
+  const target = locatorFn(page);
 
-    case 'download': {
-      const downloadPromise = page.waitForEvent('download');
-      await locator(page);
-      await downloadPromise;
-      break;
-    }
+  if (item.startsWith('|')) {
+    const action = item.slice(1);
 
-    case 'clickWithClose': {
-      await locator(page);
-      break;
+    switch (action) {
+      case 'click':
+        await target.click();
+        return;
+      default:
+        throw new Error(`Unknown action: |${action}`);
     }
+  }
 
-    default: {
-      const _exhaustive: never = action;
-      throw new Error(
-        `Unhandled DashboardPrintAction: ${String(_exhaustive)}`
-      );
-    }
+  const locatorCode = locatorFn.toString();
+
+  if (
+    locatorCode.includes("getByRole('textbox'") ||
+    locatorCode.includes('getByRole("textbox"')
+  ) {
+    await target.fill(item);
+  } else if (
+    locatorCode.includes("getByRole('combobox'") ||
+    locatorCode.includes('getByRole("combobox"') ||
+    locatorCode.includes('ng-select')
+  ) {
+    await target.click();
+    await page.getByRole('option', { name: item }).click();
+  } else {
+    throw new Error(
+      `Cannot dispatch text value at index ${index} — ` +
+        `unknown locator type. Locator: ${locatorCode}`
+    );
   }
 }
 
-export async function applyPrintAction(
+export async function applyPrintInputs(
   page: Page,
-  testData: DashboardPrintTestCase
+  testData: PrintTestCase
 ): Promise<void> {
-  await applyAction(
-    page,
-    testData.action,
-    testData.locatorIndex
-  );
+  const bound = Math.min(testData.values.length, printLocators.length);
+
+  for (let i = 0; i < bound; i++) {
+    const item = testData.values[i];
+
+    if (item === '') {
+      continue;
+    }
+
+    await applyItem(page, i, item);
+  }
 }

@@ -1,24 +1,19 @@
-import type {
-  DashboardPrintTestCase,
-} from './print.types';
+import type { PrintTestCase } from './print.types';
 
-export const printTestCases: DashboardPrintTestCase[] = [
+export const printTestCases: PrintTestCase[] = [
   {
     testCaseId: 'TC001',
     scenario: 'Print Job Sheet',
-    action: 'click',
-    locatorIndex: 0,
+    values: ['|click', '', ''],
   },
   {
     testCaseId: 'TC002',
     scenario: 'Export Job Sheet to PDF',
-    action: 'download',
-    locatorIndex: 1,
+    values: ['', '|click', ''],
   },
   {
     testCaseId: 'TC003',
     scenario: 'Print Compulsory Insurance Table',
-    action: 'clickWithClose',
-    locatorIndex: 2,
+    values: ['', '', '|click'],
   },
 ];

@@ -1,0 +1,9 @@
+TC-ID,Module,Feature,Scenario,Value
+TC001,Dashboard,Search,Search by Receipt Number,"HQ0000020,,,,,,,,,,,"
+TC002,Dashboard,Search,Search by Coverage Start Date,",,10,,,,,,,,,"
+TC003,Dashboard,Search,Search by Coverage End Date,",,,30,,,,,,,,"
+TC004,Dashboard,Search,Search by Transaction Status,",,,,,,งานใหม่,,,,,"
+TC005,Dashboard,Search,Search by Insured Name,",Harry,,,,,,,,,,"
+TC006,Dashboard,Search,Search by Car Model,",,,,,,,,,,,E-HS9"
+TC007,Dashboard,Search,Search by Chassis Number,",,,,,,,,,,1HGBH41JXMN109186,"
+TC008,Dashboard,Search,Search with Multiple Filters,"HQ0000020,Harry,,,,,,,,,,"

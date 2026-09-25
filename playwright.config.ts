@@ -85,6 +85,8 @@ export default defineConfig({
 
   timeout: 30_000,
 
+  retries: 2,
+
   expect: {
     timeout: 5_000,
   },
@@ -106,9 +108,9 @@ export default defineConfig({
   use: {
     storageState,
 
-    screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
-    trace: 'on-first-retry',
+    screenshot: 'on',
+    video: 'on',
+    trace: 'on',
   },
 
   projects: [

@@ -9,6 +9,7 @@ dist/
 playwright-report/
 test-results/
 blob-report/
+report/
 
 # IDE
 .vscode/
@@ -34,6 +35,11 @@ Authen/Microsoft/state.json
 # Form login authentication state
 Test-Local/**/_login/session-storage.json
 
-# AI Agent artifacts       ← ← ← เพิ่ม 3 บรรทัดนี้
+# AI Agent artifacts — keep folder, ignore contents (except .gitkeep)
 .agent-cache/
-**/_locators/
+**/_locators/*
+!**/_locators/.gitkeep
+**/_flows/*
+!**/_flows/.gitkeep
+
+# NOTE: _scenarios/ committed fully (QA-owned CSV test scenarios)

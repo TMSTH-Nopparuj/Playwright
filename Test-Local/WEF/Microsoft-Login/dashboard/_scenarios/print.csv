@@ -1,0 +1,4 @@
+﻿TC-ID,Module,Feature,Scenario,Value
+TC001,Dashboard,Print,Print Job Sheet,"|click,,"
+TC002,Dashboard,Print,Export Job Sheet to PDF,",|click,"
+TC003,Dashboard,Print,Print Compulsory Insurance Table,",,|click"

@@ -23,7 +23,7 @@ Test-Prod ใช้ทดสอบ URL ที่ public (production, staging) �
 **Option B: Clone แล้ว push repo ใหม่**
 
 ```bash
-git clone https://github.com/CxllmxZ/ttest-playwright.git my-tests
+git clone https://github.com/TMSTH-Nopparuj/Playwright.git my-tests
 cd my-tests
 git remote remove origin
 git remote add origin https://github.com/YOUR_USERNAME/my-tests.git
@@ -456,4 +456,4 @@ Built with Playwright by Microsoft — https://playwright.dev
 
 **Live demo:** https://cxllmxz.github.io/ttest-playwright/
 
-**Repo:** https://github.com/CxllmxZ/ttest-playwright
+**Repo:** https://github.com/TMSTH-Nopparuj/Playwright

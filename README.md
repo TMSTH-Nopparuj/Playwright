@@ -16,7 +16,7 @@ Test-Prod ใช้ทดสอบ URL ที่ public (production, staging) �
 
 **Option A: Fork (แนะนำ)**
 
-1. เปิด https://github.com/CxllmxZ/ttest-playwright
+1. เปิด https://github.com/TMSTH-Nopparuj/Playwright
 2. คลิก **Fork** มุมขวาบน
 3. เลือก account ของคุณ
 
